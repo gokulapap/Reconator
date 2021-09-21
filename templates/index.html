@@ -1,0 +1,156 @@
+<html>
+<head>
+<title>Auto Recon</title>
+
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.6.3/css/font-awesome.min.css">
+<link href="https://fonts.googleapis.com/css?family=Lato" rel="stylesheet">
+
+<style>
+body{
+    margin: 0;
+    padding: 0;
+    font-family: "Lato", sans-serif;
+    background-color: #3E4649;
+}
+.3d
+{
+   translateX(-78px) rotate(-5deg) skewX(-12deg) skew(-8deg,14deg) translateY(-90px)
+}
+
+
+.container{
+    width: 480px;
+    background-color: #2F2F31;
+    margin: 200px auto;
+}
+.header{
+    background-color: #22A86D;
+    color: white;
+    text-align: center;
+    font-size: 18px;
+    font-weight: bold;
+    padding: 25px;
+    letter-spacing: 1px;
+}
+.wrap{
+    padding: 25px 40px 40px 80px ;
+    text-align: center;
+}
+.group{
+    position: relative;
+    padding: 15px;
+    width: 80%;
+}
+.group .fa{
+    color: white;
+    background-color: #22A86D;
+    width: 15px;
+    left: 5px;
+    position: absolute;
+    padding: 15px;
+    
+}
+.group .check-pass{
+    position: absolute;
+    right: 0;
+    left: 100%;
+    background-color:transparent;
+    top: 15px;
+    font-size: 22px;
+}
+.group .check-e{
+    position: absolute;
+    right: 0;
+    left: 100%;
+    background-color:transparent;
+    top: 15px;
+    font-size: 22px;
+}
+.valid{
+    color: #22A86D !important;
+}
+.invalid{
+    color: #c0392b !important;
+}
+input{
+    background-color: #424242;
+    border-color: transparent;
+    display: inline-block;
+    height: 43px;
+    width: 80%;
+    outline: none;
+    color: white;
+    letter-spacing: 1px;
+    font-weight: bold;
+    padding: 0 0 0 45px;
+    font-family: "Lato", sans-serif;
+}
+
+.group button{
+    border-color: transparent;
+    float: center;
+    padding: 5px 35px;
+    font-family: "Lato", sans-serif;
+    color: white;
+    font-size: 18px;
+    letter-spacing: 1px;
+    font-weight: bolder;
+    background-color: #22A86D;
+    cursor: pointer;
+
+}
+.footer{
+    padding: 15px 15px 40px 15px;
+    background-color: #424242;
+    color: white;
+    text-align: center;
+}
+.footer .fa{
+    color: #22A86D;
+    padding: 0px 5px;
+}
+.footer div{
+    width: 50%;
+    float: left;
+}
+.bottom{
+    color: white;
+    text-align: center;
+}
+.bottom a{
+    padding: 5px;
+    color: white;
+}
+</style>
+
+</head>
+
+<body>
+<!-- results are stored in results directory! -->
+      <div class="3d">
+      <div class="container">
+            <div class="header">Enter domain to Recon</div>
+            <div class="wrap">
+
+	    <form action="/adder" method="post">    
+            <div class="group">
+                    <i class="fa fa-user"></i>
+                    <input type="text" placeholder="example.com" name="url">
+                    <i class="fa check-e"></i> 
+                </div>
+<br>
+
+
+                <div class="group">
+                    <button type="submit" formmethod="post">Add to queue</button>
+		    <br><br>
+		    <p style="color:white; size=10px">{{ data }}</p>
+                </div>
+	    </form>
+            </div>
+
+        </div>
+      </div>
+
+</body>
+</html>
