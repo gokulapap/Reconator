@@ -24,5 +24,5 @@ os.system('bash modules/gather_urls.sh')
 bot.send_mesage(chat_id, f"gathered all urls for {url} !")
 
 
-#dumping to database with dump.py
-os.system('python dump.py {}'.format(url))
+#dumping to database with insert.py
+os.system('python insert.py {}'.format(url))
