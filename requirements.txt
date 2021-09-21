@@ -3,5 +3,5 @@ gunicorn
 flask_cors
 psycopg2-binary
 pyTelegramBotAPI
-base64
+pybase64
 flask_autoindex
