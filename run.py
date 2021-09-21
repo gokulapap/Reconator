@@ -1,3 +1,5 @@
+#python run.py {domain}
+
 import os
 import sys
 import telebot
@@ -21,4 +23,6 @@ bot.send_mesage(chat_id, f"subdomain enumeration for {url} completed !")
 os.system('bash modules/gather_urls.sh')
 bot.send_mesage(chat_id, f"gathered all urls for {url} !")
 
+
 #dumping to database with dump.py
+os.system('python dump.py {}'.format(url))

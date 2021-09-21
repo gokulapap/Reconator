@@ -1,0 +1,7 @@
+flask
+gunicorn
+flask_cors
+psycopg2-binary
+pyTelegramBotAPI
+base64
+flask_autoindex

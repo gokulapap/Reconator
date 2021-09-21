@@ -1,1 +1,6 @@
 subdomains.sh -> path of subfinder
+
+
+#table_name - output
+#output[domain, result]
+
