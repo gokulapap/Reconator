@@ -2,6 +2,8 @@ subdomains.sh -> path of subfinder
 change bp.py
 change all paths to absolute path
 
+add a path where we can see the queue
+
 #table_name - output
 #output[domain, result]
 
