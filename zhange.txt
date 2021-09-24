@@ -1,5 +1,6 @@
 subdomains.sh -> path of subfinder
-
+change bp.py
+change all paths to absolute path
 
 #table_name - output
 #output[domain, result]
