@@ -1,5 +1,5 @@
 {
-  "name" : "Reconator"
+  "name" : "Reconator",
   "description": "An Automated Recon Framework",
   "repository": "https://github.com/gokulapap/Reconator",
   "keywords": ["python", "recon", "automation"]
