@@ -17,11 +17,11 @@ bot.send_message(chat_id, f"dnscan for {url} completed !")
 
 #subdomain_enumeration
 os.system('bash modules/subdomains.sh')
-bot.send_mesage(chat_id, f"subdomain enumeration for {url} completed !")
+bot.send_message(chat_id, f"subdomain enumeration for {url} completed !")
 
 #urls_gather
 os.system('bash modules/gather_urls.sh')
-bot.send_mesage(chat_id, f"gathered all urls for {url} !")
+bot.send_message(chat_id, f"gathered all urls for {url} !")
 
 
 #dumping to database with insert.py
