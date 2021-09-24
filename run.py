@@ -10,7 +10,9 @@ chat_id = os.environ['CHAT_ID']
 
 #creating a directory in the name of target to save all results
 os.mkdir("results/{}".format(url))
+os.system("results/{}/output.txt".format(url))
 os.system("chmod 777 * -R")
+
 
 #dnscan
 os.system('bash modules/dnscan.sh')
