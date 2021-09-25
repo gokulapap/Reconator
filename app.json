@@ -2,5 +2,28 @@
   "name" : "Reconator",
   "description": "An Automated Recon Framework",
   "repository": "https://github.com/gokulapap/Reconator",
-  "keywords": ["python", "recon", "automation"]
+  "keywords": ["python", "recon", "automation"],
+  "website": "https://t.me/phaticusthiccy",
+  "success_url": "https://t.me/AsenaSupport",
+  "env": {
+        "API_KEY": {
+            "description": "Go to BotFather bot in telegram https://telegram.me/BotFather and create a bot to get the api key",
+            "required": true
+        },
+        "CHAT_ID": {
+            "description": "Go to chat_id_echo bot and get your chat id",
+            "required": true
+        }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku-community/apt"
+    },
+    {
+      "url": "heroku/python"
+    }
+  ],
+    "addons": [{
+      "plan": "heroku-postgresql"
+    }]
 }
