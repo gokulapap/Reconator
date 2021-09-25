@@ -1,8 +1,19 @@
-subdomains.sh -> path of subfinder
-change bp.py
-change all paths to absolute path
+[]subdomains.sh -> path of subfinder
+[]change bp.py
+[]change all paths to absolute path
 
-add a path where we can see the queue
+[]add a path where we can see the queue
+
+[]using db table as queue
+
+#table_name - queue
+#queue[id, target]
+
+* insert into table (enqueue)
+* cron.py -> select * from queue limit 1 -> then fetch first row -> get id and delete that row
+
+
+[]output db table
 
 #table_name - output
 #output[domain, result]
