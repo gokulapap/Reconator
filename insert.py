@@ -1,4 +1,4 @@
-# python dump.py {domain}
+# python insert.py {domain}
 
 import os
 import sys
