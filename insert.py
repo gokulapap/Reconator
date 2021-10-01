@@ -26,7 +26,7 @@ if url in doms:
 
 else:
   #read from output.txt and dump in database
-  f = open('results/{}/output.txt'.format(url), 'r')
+  f = open('results/{}-output.txt'.format(url), 'r')
   res = f.read()
   f.close()
 
