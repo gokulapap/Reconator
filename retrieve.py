@@ -13,10 +13,9 @@ t = cur.fetchall()
 for i in t:
   url = i[0]
   res = i[1]
-  os.mkdir('results/{}'.format(url))
   final = base64.standard_b64decode(res)
   final = final.decode('utf-8')
-  f = open('results/{}/output.txt'.format(url), 'w')
+  f = open('results/{}-output.txt'.format(url), 'w')
   f.write(final)
   f.close()
 
