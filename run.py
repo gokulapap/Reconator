@@ -8,7 +8,7 @@ url = sys.argv[1]
 bot = telebot.TeleBot(os.environ['API_KEY'])
 chat_id = os.environ['CHAT_ID']
 
-os.system("results/{}-output.txt".format(url))
+os.system("touch results/{}-output.txt".format(url))
 os.system("chmod 777 /app/* -R")
 
 
