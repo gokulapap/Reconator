@@ -8,9 +8,7 @@ url = sys.argv[1]
 bot = telebot.TeleBot(os.environ['API_KEY'])
 chat_id = os.environ['CHAT_ID']
 
-#creating a directory in the name of target to save all results
-os.mkdir("results/{}".format(url))
-os.system("results/{}/output.txt".format(url))
+os.system("results/{}-output.txt".format(url))
 os.system("chmod 777 /app/* -R")
 
 

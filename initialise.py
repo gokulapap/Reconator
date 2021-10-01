@@ -35,8 +35,8 @@ cur.execute('''
 
 create table queue (
 
-id varchar(5),
-target varchar(50)
+id varchar(5) SERIAL PRIMARY KEY,
+target varchar(50) NOT NULL
 
 );
 
