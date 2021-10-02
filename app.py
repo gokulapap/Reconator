@@ -10,7 +10,6 @@ app.register_blueprint(auto_bp, url_prefix='/results')
 def home():
    return render_template("index.html")
 
-
 @app.route("/adder", methods=["GET", "POST"])
 def adder():
  if request.method == "POST":
@@ -44,6 +43,11 @@ def check_queue():
   conn.close()
 
   return str
+
+@app.route("/initialise")
+def initialise():
+  os.system('python initialise.py')
+  return 'Initialised sucessfully ! test notification sent \/'
 
 @app.route("/results")
 def results():
