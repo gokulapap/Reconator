@@ -12,6 +12,10 @@
 * insert into table (enqueue)
 * cron.py -> select * from queue limit 1 -> then fetch first row -> get id and delete that row
 
+[]/output/{url}
+
+#########
+
 []output db table
 
 #table_name - output
