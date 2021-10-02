@@ -28,6 +28,23 @@ def adder():
 
   return render_template("index.html", data="Added to queue !")
 
+@app.route("/queue")
+def check_queue():
+  str = '<h1>Targets in queue are</h1><br><br><ul>'
+  DATABASE_URL = os.environ['DATABASE_URL']
+  conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+  cur = conn.cursor()
+  cur.execute("select * from queue")
+  t = cur.fetchall()
+  for i in t:
+    str = str + '<li> {}'.format(i[1])
+  str = str + "</ul>"
+  conn.commit()
+  cur.close()
+  conn.close()
+
+  return str
+
 @app.route("/results")
 def results():
    return "Results Here!"
