@@ -1,10 +1,8 @@
 from flask import Flask, render_template, send_file, request
-from bp import auto_bp
 import os
 import psycopg2
 
 app = Flask(__name__)
-app.register_blueprint(auto_bp, url_prefix='/results')
 
 @app.route("/")
 def home():
