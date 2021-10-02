@@ -21,3 +21,7 @@
 #table_name - output
 #output[domain, result]
 
+/initialise
+/scanned
+/queue
+/output/<url>
