@@ -4,6 +4,10 @@ import os
 import sys
 import psycopg2
 import base64
+import telebot
+
+bot = telebot.TeleBot(os.environ['API_KEY'])
+chat_id = os.environ['CHAT_ID']
 
 url = sys.argv[1]
 DATABASE_URL = os.environ['DATABASE_URL']
@@ -38,5 +42,7 @@ else:
   conn.commit()
 
 conn.commit()
+
+bot.send_message(chat_id, f"scanned results of {url} is saved in db")
 cur.close()
 conn.close()
