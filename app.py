@@ -61,8 +61,26 @@ def scanned():
 @app.route("/output/<url>")
 def output(url):
   url = url
-  os.system(f"python retrieve.py {url}")
+  DATABASE_URL = os.environ['DATABASE_URL']
+  conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+  cur = conn.cursor()
+
+  cur.execute(f"select result from output where domain = '{url}'")
+  t = cur.fetchall()
+
+  res = t[0][0]
+  final = base64.standard_b64decode(res)
+  final = final.decode('utf-8')
+  os.system(f"touch /app/results/{url}-output.txt")
+  f = open('/app/results/{}-output.txt'.format(url), 'w')
+  f.write(final)
+  f.close()
+
+  conn.commit()
+  cur.close()
+  conn.close()
   return send_file("/app/results/{}-output.txt".format(url))
+
 
 @app.route("/initialise")
 def initialise():
