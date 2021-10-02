@@ -53,7 +53,7 @@ def scanned():
   cur.execute("select domain from output")
   t = cur.fetchall()
   for i in t:
-    str = str + f"<li> <a href='/output/{}'>{}</a>".format(i[0], i[0])
+    str = str + "<li> <a href='/output/{}'>{}</a>".format(i[0], i[0])
   str = str + "</ul>"
   conn.commit()
   cur.close()
