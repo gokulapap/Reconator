@@ -61,7 +61,7 @@ def scanned():
   return str
 
 @app.route("/output/<url>")
-def output():
+def output(url):
   url = url
   os.system(f"python retrieve.py {url}")
   return send_file("/app/results/{}-output.txt".format(url))
