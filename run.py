@@ -13,15 +13,15 @@ os.system("chmod 777 /app/* -R")
 
 
 #dnscan
-os.system('bash modules/dnscan.sh')
+os.system(f"bash modules/dnscan.sh {url}")
 bot.send_message(chat_id, f"dnscan for {url} completed !")
 
 #subdomain_enumeration
-os.system('bash modules/subdomains.sh')
+os.system(f"bash modules/subdomains.sh {url}")
 bot.send_message(chat_id, f"subdomain enumeration for {url} completed !")
 
 #urls_gather
-os.system('bash modules/gather_urls.sh')
+os.system(f"bash modules/gather_urls.sh {url}")
 bot.send_message(chat_id, f"gathered all urls for {url} !")
 
 
