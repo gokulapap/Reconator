@@ -25,3 +25,6 @@
 /scanned
 /queue
 /output/<url>
+
+[] to add pop from queue option
+
