@@ -9,7 +9,7 @@ conn = psycopg2.connect(DATABASE_URL, sslmode='require')
 cur = conn.cursor()
 
 #checks the db queue table every 60 secs
-While True:
+while True:
  try:
    cur.execute("select * from queue limit 1")
    t = cur.fetchall()
