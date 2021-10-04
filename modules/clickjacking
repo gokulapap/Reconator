@@ -1,0 +1,67 @@
+#!/usr/bin/python3
+
+from urllib.request import urlopen
+from sys import argv, exit
+
+__author__ = 'Gokul'
+
+def check(url):
+    ''' check given URL is vulnerable or not '''
+
+    try:
+        if "http" not in url: url = "http://" + url
+
+        data = urlopen(url)
+        headers = data.info()
+
+        if not "X-Frame-Options" in headers: return True
+
+    except: return False
+
+
+def main():
+
+    try: site = argv[1]
+    except: print("[*] Usage: python3 clickjacking.py <domain>"); exit(0)
+
+    f = open("/app/results/{}-output.txt".format(site), "a")
+
+    f.write("\n\n2) CLICKJACKING:\n")
+    print("\n[*] Checking " + site)
+    f.write("\n[*] Checking " + site)
+    status = check(site)
+
+    if status:
+       print("[+] Website is vulnerable to clickjacking !")
+       f.write("\n[+] Website is vulnerable to clickjacking !")
+
+       code = """
+<html>
+<head><title>Clickjack test page</title></head>
+<body>
+<p>Website is vulnerable to clickjacking!</p>
+
+<iframe src="{}" width="500" height="500"></iframe>
+
+</body>
+</html>""".format(site)
+
+
+       print("\nCLICKJACKING POC:\n", code)
+       print("\n")
+       f.write("\n\nCLICKJACKING POC:\n")
+       f.write(code)
+       f.write("\n")
+
+    elif not status:
+       print("\n[-] Website is not vulnerable to clickjacking !")
+       f.write("\n[-] Website is not vulnerable to clickjacking !")
+    else:
+       print('some error occured ! try again\n')
+       f.write("\nsome error occured ! try again\n")
+
+    f.write("\n\n\n######################################################################\n######################################################################\n\n\n")
+    f.close()
+
+if __name__ == '__main__':
+    main()

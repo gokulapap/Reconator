@@ -1,11 +1,3 @@
-[]subdomains.sh -> path of subfinder
-[]change bp.py
-[]change all paths to absolute path
-
-[]add a path where we can see the queue
-
-[]using db table as queue
-
 #table_name - queue
 #queue[id, target]
 
@@ -28,3 +20,25 @@
 
 [] to add pop from queue option
 
+----------------------------------
+[]order
+
+1. dnscan
+2. clickjacking
+2. subdomain
+3. dirb
+4. gather all urls
+
+
+[] tools
+
+adding index of all category in results page -> ctrl + f -> index name
+
+corscanner -> with python requests
+./httpx -silent -ip -location -no-color -threads 60 -web-server -websocket -l subs
+./httpx -silent -title -l subs
+clickjacking test
+wayback,gospider,hakrawl -> result
+result -> gf, params & paths using unfurl  
+paramspider - paramsfinding
+nuclei template scan

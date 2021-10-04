@@ -11,19 +11,23 @@ chat_id = os.environ['CHAT_ID']
 os.system("touch results/{}-output.txt".format(url))
 os.system("chmod 777 /app/* -R")
 
+bot.send_message(chat_id, f"Recon started for {url} !")
 
-#dnscan
+#1_dnscan
 os.system(f"bash modules/dnscan.sh {url}")
-bot.send_message(chat_id, f"dnscan for {url} completed !")
 
-#subdomain_enumeration
+#2_clickjacking
+os.system(f"modules/clickjacking {url}")
+
+#3_subdomain_enumeration
 os.system(f"bash modules/subdomains.sh {url}")
-bot.send_message(chat_id, f"subdomain enumeration for {url} completed !")
 
-#urls_gather
+#4_dirbrute
+os.system(f"bash modules/dirb.sh {url}")
+
+#5_urls_gather
 os.system(f"bash modules/gather_urls.sh {url}")
-bot.send_message(chat_id, f"gathered all urls for {url} !")
 
-
+bot.send_message(chat_id, f"Recon for {url} is completed ! you can check the results now on website !")
 #dumping to database with insert.py
 os.system('python insert.py {}'.format(url))
