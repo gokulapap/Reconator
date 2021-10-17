@@ -1,0 +1,28 @@
+# tests for cors vulnerability
+
+import requests
+import sys
+
+url = sys.argv[1]
+furl = "http://" + url
+furl = requests.head(furl, allow_redirects=True).url
+
+f = open("/app/results/{}-output.txt".format(url), "a")
+
+f.write("3) CORSTEST\n\n")
+f.write(f"[+] Tesing {url} for CORS\n")
+
+headers = {"Origin" : "http://evil.com"}
+
+req = requests.get(furl, headers=headers)
+
+if req.headers.get("Access-Control-Allow-Origin"):
+  print(f"{url} is vulnerable to cors")
+  f.write(f"[!] {url} is vulnerable to CORS !!")
+else:
+  print("Not Vulnerable!")
+  f.write(f"[-] {url} is not vulnerable to CORS !")
+
+f.write("\n\n\n######################################################################\n######################################################################\n\n\n")
+f.close()
+

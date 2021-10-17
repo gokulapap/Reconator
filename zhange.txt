@@ -1,9 +1,6 @@
 #table_name - queue
 #queue[id, target]
 
-* insert into table (enqueue)
-* cron.py -> select * from queue limit 1 -> then fetch first row -> get id and delete that row
-
 []/output/{url}
 
 #########
@@ -18,27 +15,21 @@
 /queue
 /output/<url>
 
+---------------------------------
 [] to add pop from queue option
-
+[] navbar to homepage
 ----------------------------------
-[]order
-
-1. dnscan
-2. clickjacking
-2. subdomain
-3. dirb
-4. gather all urls
 
 
 [] tools
 
 adding index of all category in results page -> ctrl + f -> index name
 
-corscanner -> with python requests
+unfurl
+subs -> sub_tak + get-title + naabu port scan
+gau,hakrawl,gospider -> gf patterns + roguesmg
+nuclei template scan
 ./httpx -silent -ip -location -no-color -threads 60 -web-server -websocket -l subs
 ./httpx -silent -title -l subs
-clickjacking test
-wayback,gospider,hakrawl -> result
 result -> gf, params & paths using unfurl  
 paramspider - paramsfinding
-nuclei template scan

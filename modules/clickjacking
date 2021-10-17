@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+# tests for clickjacking
 
 from urllib.request import urlopen
 from sys import argv, exit
@@ -26,9 +26,9 @@ def main():
 
     f = open("/app/results/{}-output.txt".format(site), "a")
 
-    f.write("\n\n2) CLICKJACKING:\n")
-    print("\n[*] Checking " + site)
-    f.write("\n[*] Checking " + site)
+    f.write("2) CLICKJACKING \n")
+    print("\n[+] Checking " + site)
+    f.write("\n[+] Checking " + site + " for Clickjacking")
     status = check(site)
 
     if status:

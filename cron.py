@@ -30,4 +30,3 @@ while True:
 
 cur.close()
 conn.close()
-

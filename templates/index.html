@@ -1,156 +1,370 @@
-<html>
-<head>
-<title>Auto Recon</title>
-
-<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.6.3/css/font-awesome.min.css">
-<link href="https://fonts.googleapis.com/css?family=Lato" rel="stylesheet">
-
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.2/css/all.min.css"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-body{
-    margin: 0;
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@200;300;400;500;600;700&display=swap');
+*{
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Poppins', sans-serif;
+} 
+nav{
+  display: flex;
+  height: 70px;
+  width: 100%;
+  background: #1b1b1b;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 50px 0 90px;
+  flex-wrap: wrap;
+}
+nav .logo{
+  color: #fff;
+  font-size: 35px;
+  font-weight: 600;
+}
+nav ul{
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+}
+nav ul li{
+  margin: 0 5px;
+}
+nav ul li a{
+  color: #f2f2f2;
+  text-decoration: none;
+  font-size: 18px;
+  font-weight: 500;
+  padding: 8px 15px;
+  border-radius: 5px;
+  letter-spacing: 1px;
+  transition: all 0.3s ease;
+}
+nav ul li a.active,
+nav ul li a:hover{
+  color: #111;
+  background: #fff;
+}
+nav .menu-btn i{
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  display: none;
+}
+input[type="checkbox"]{
+  display: none;
+}
+
+@media (max-width: 1000px){
+  nav{
+    padding: 0 40px 0 40px;
+  }
+}
+
+@media (max-width: 920px) {
+  nav .menu-btn i{
+    display: block;
+  }
+  #click:checked ~ .menu-btn i:before{
+    content: "\f00d";
+  }
+  nav ul{
+    position: fixed;
+    top: 80px;
+    left: -100%;
+    background: #111;
+    height: 100vh;
+    width: 100%;
+    text-align: center;
+    display: block;
+    transition: all 0.3s ease;
+  }
+  #click:checked ~ ul{
+    left: 0;
+  }
+  nav ul li{
+    width: 100%;
+    margin: 40px 0;
+  }
+  nav ul li a{
+    width: 100%;
+    margin-left: -100%;
+    display: block;
+    font-size: 20px;
+    transition: 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+  #click:checked ~ ul li a{
+    margin-left: 0px;
+  }
+  nav ul li a.active,
+  nav ul li a:hover{
+    background: none;
+    color: cyan;
+  }
+}
+.content{
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: -1;
+  width: 100%;
+  padding: 0 30px;
+  color: #1b1b1b;
+}
+.content div{
+  font-size: 40px;
+  font-weight: 700;
+}
+
+@import url("https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;500&display=swap");
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box; }
+
+html, body {
+  height: 100%; }
+
+body {
+  background: #282c34;
+  color: #61dafb;
+  font-family: "Work Sans", sans-serif;
+  font-size: 16px;
+  text-align: center;
+  line-height: 1.4; }
+
+main {
+  height: 70%;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  max-width: 430px; }
+
+h1 {
+  font-size: 2.5em;
+  font-weight: 500;
+  margin: 0 auto .5em; }
+  @media screen and (max-width: 640px) {
+    h1 {
+      font-size: 1.75em; } }
+
+h2 {
+  margin-bottom: 1em; }
+
+p {
+  font-weight: 300;
+  font-size: 1.25em; }
+  p:first-of-type {
+    margin-bottom: .5em; }
+  p.error-msg {
+    color: #c92d2d;
+    font-size: 1em;
+    font-weight: 500;
+    margin-top: 1em; }
+
+hr {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px dashed white;
+  margin-bottom: 2em; }
+
+#root {
+  width: 100%; }
+
+ul2 {
+  padding: .5em 0;
+  font-weight: 300;
+  list-style: none;
+  text-align: left;
+  color: white;
+  width: 100%; }
+  ul2 li {
+    display: block;
+    margin-bottom: .75em;
+    padding: 0 .75em .75em .5em;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.5); }
+    ul2 li div {
+      display: inline-flex;
+      align-items: center;
+      text-align: left; }
+    ul2 li label {
+      flex-basis: 100%;
+      margin-bottom: 0; }
+
+label {
+  display: block;
+  margin-bottom: .25em;
+  text-align: left; }
+
+input, select, textarea {
+  display: block;
+  width: 100%;
+  margin-bottom: 1em;
+  border: none;
+  border-radius: 4px;
+  padding: 12px;
+  font-family: "Work Sans", sans-serif;
+  font-weight: 300;
+  font-size: 1em; }
+
+input[type="checkbox"] {
+  margin: 0 8px 0 0;
+  width: initial; }
+
+button {
+  width: 50%;
+  background: #61dafb;
+  color: #282c34;
+  font-family: "Work Sans", sans-serif;
+  font-size: 1em;
+  margin: .5em auto 0;
+  padding: .75em 1em;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  -webkit-transition: all 0.2s ease-in-out;
+  -ms-transition: all 0.2s ease-in-out;
+  transition: all 0.2s ease-in-out; }
+  button.btn-delete {
+    margin: 0 0 0 10px;
     padding: 0;
-    font-family: "Lato", sans-serif;
-    background-color: #3E4649;
+    background: none;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 26px;
+    font-weight: 300;
+    line-height: 1;
+    flex-basis: 10%; }
+    button.btn-delete:hover {
+      color: #c92d2d; }
+
+img {
+margin-left: 19%;
+margin-right: 20%;
+margin-top: 5%;
+margin-bottom: -3%;
+
+} 
+
+#form-div{
+  align-items: center;
+  margin-bottom:1%;
+  height:100%;
+  
+
 }
-.3d
-{
-   translateX(-78px) rotate(-5deg) skewX(-12deg) skew(-8deg,14deg) translateY(-90px)
+
+@media only screen and (max-width: 1080px){
+body{
+     overflow-x: hidden;
+}
+ main {
+   max-width:90%;
+   max-height: 200%;
+   padding:10px;
+
+ }
+ #root{
+   margin:0 auto;
+   padding:0;
+ }
+
+p {
+
+  font-weight: 300;
+  font-size: 1.25em; }
+  p:first-of-type {
+    margin-bottom: .5em; }
+  p.error-msg {
+    color: #c92d2d;
+    font-size: 1em;
+    font-weight: 500;
+    margin-top: 1em; }
+
+ h1{
+   font-size:30px;
+ }
+
+ button{
+   width:50%;
+   height:15%;
+   border-radius:8px;
+   font-size:18px;
+   font-weight: bold;
+   margin-top:6% !important;
+   padding:5px !important;
+ }
+ input{
+   width:90%;
+   height:10%;
+   border-radius:10px;
+   font-size:20px;
+   font-weight:initial;
+ }
+
+#form-div{
+  margin-top:1%;
+  height:100%;
+
+}
+img {
+width: 70%;
+align-items:center;
+margin-left: 13%;
+margin-right: 20%;
+margin-top: 16%;   
+
+}
+
 }
 
 
-.container{
-    width: 480px;
-    background-color: #2F2F31;
-    margin: 200px auto;
-}
-.header{
-    background-color: #22A86D;
-    color: white;
-    text-align: center;
-    font-size: 18px;
-    font-weight: bold;
-    padding: 25px;
-    letter-spacing: 1px;
-}
-.wrap{
-    padding: 25px 40px 40px 80px ;
-    text-align: center;
-}
-.group{
-    position: relative;
-    padding: 15px;
-    width: 80%;
-}
-.group .fa{
-    color: white;
-    background-color: #22A86D;
-    width: 15px;
-    left: 5px;
-    position: absolute;
-    padding: 15px;
-    
-}
-.group .check-pass{
-    position: absolute;
-    right: 0;
-    left: 100%;
-    background-color:transparent;
-    top: 15px;
-    font-size: 22px;
-}
-.group .check-e{
-    position: absolute;
-    right: 0;
-    left: 100%;
-    background-color:transparent;
-    top: 15px;
-    font-size: 22px;
-}
-.valid{
-    color: #22A86D !important;
-}
-.invalid{
-    color: #c0392b !important;
-}
-input{
-    background-color: #424242;
-    border-color: transparent;
-    display: inline-block;
-    height: 43px;
-    width: 80%;
-    outline: none;
-    color: white;
-    letter-spacing: 1px;
-    font-weight: bold;
-    padding: 0 0 0 45px;
-    font-family: "Lato", sans-serif;
-}
-
-.group button{
-    border-color: transparent;
-    float: center;
-    padding: 5px 35px;
-    font-family: "Lato", sans-serif;
-    color: white;
-    font-size: 18px;
-    letter-spacing: 1px;
-    font-weight: bolder;
-    background-color: #22A86D;
-    cursor: pointer;
-
-}
-.footer{
-    padding: 15px 15px 40px 15px;
-    background-color: #424242;
-    color: white;
-    text-align: center;
-}
-.footer .fa{
-    color: #22A86D;
-    padding: 0px 5px;
-}
-.footer div{
-    width: 50%;
-    float: left;
-}
-.bottom{
-    color: white;
-    text-align: center;
-}
-.bottom a{
-    padding: 5px;
-    color: white;
-}
 </style>
+  </head>
+  <body>
+    <nav>
+      <div class="logo">Reconator</div>
+      <input type="checkbox" id="click">
+      <label for="click" class="menu-btn">
+        <i class="fas fa-bars"></i>
+      </label>
+      <ul>
+        <li><a class="active" href="#">Home</a></li>
+        <li><a href="#">About</a></li>
+        <li><a href="queue">Queue</a></li>
+        <li><a href="scanned">Scanned</a></li>
+	<li><a href="#">Issues</a></li>
+      </ul>
+    </nav>
 
-</head>
 
-<body>
-<!-- results are stored in results directory! -->
-      <div class="3d">
-      <div class="container">
-            <div class="header">Enter domain to Recon</div>
-            <div class="wrap">
+<div>
+<img src="/static/reconator.png" alt="">
+</div>
+<br><br><br>
+<div id = "form-div">
+    <form action="/adder" method="post">
+    <main>
+        <h1>Enter target to Recon</h1>
+        <hr>
+        <br>
+        <input id="item-name" type="text" placeholder="target.com" name="url">
+        <button type="submit">Add to Queue</button>
+        <p><br> {{ info }}</p>
+        <div id="root"></div>
+    </main>
+    </form>
+  </div>
 
-	    <form action="/adder" method="post">    
-            <div class="group">
-                    <i class="fa fa-user"></i>
-                    <input type="text" placeholder="example.com" name="url">
-                    <i class="fa check-e"></i> 
-                </div>
-<br>
 
 
-                <div class="group">
-                    <button type="submit" formmethod="post">Add to queue</button>
-		    <br><br>
-		    <p style="color:white; size=10px">{{ data }}</p>
-                </div>
-	    </form>
-            </div>
-
-        </div>
-      </div>
-
-</body>
+  </body>
 </html>
