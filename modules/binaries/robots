@@ -1,0 +1,17 @@
+import requests
+import sys
+
+url = sys.argv[1]
+furl = 'http://'+url
+
+furl = requests.head(furl, allow_redirects=True).url
+furl = furl + 'robots.txt'
+
+sc = requests.get(furl).status_code
+
+if sc == 200:
+  content = requests.get(furl).text
+  print(content)
+else:
+  print(f"[-] No robots.txt found for {url}")
+

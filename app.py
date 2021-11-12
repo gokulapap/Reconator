@@ -7,7 +7,11 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-   return render_template("index.html")
+  try:
+    os.system('python initialise.py')
+    return render_template("index.html")
+  except:
+    return render_template("index.html")
 
 @app.route("/adder", methods=["GET", "POST"])
 def adder():
@@ -776,8 +780,11 @@ def output(url):
 
 @app.route("/initialise")
 def initialise():
-  os.system('python initialise.py')
-  return 'Initialised sucessfully ! test notification sent to your telegram \/'
+  try:
+    os.system('python initialise.py')
+    return 'Initialised sucessfully ! test notification sent to your telegram \/'
+  except:
+    return "Initialised Already Go to Home page !!"
 
 @app.route("/results")
 def results():

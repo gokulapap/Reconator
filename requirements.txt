@@ -8,6 +8,10 @@ flask_autoindex
 wfuzz
 wafw00f
 bs4
+colorama
+requests
+argparse
+python-Wappalyzer
 aiodns==3.0.0
 aiofiles==0.7.0
 aiohttp==3.7.4.post0

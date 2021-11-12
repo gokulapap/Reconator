@@ -1,35 +1,48 @@
-#table_name - queue
 #queue[id, target]
-
-[]/output/{url}
-
-#########
-
-[]output db table
-
-#table_name - output
 #output[domain, result]
+
+sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g" - pipe with output to remove colors
+
+########################################
+
+steps:
 
 /initialise
 /scanned
 /queue
 /output/<url>
 
----------------------------------
-[] to add pop from queue option
-[] navbar to homepage
-----------------------------------
-
-
 [] tools
 
 adding index of all category in results page -> ctrl + f -> index name
 
-unfurl
-subs -> sub_tak + get-title + naabu port scan
+whois, wappy, shcheck
+blc
+js leaker
 gau,hakrawl,gospider -> gf patterns + roguesmg
-nuclei template scan
-./httpx -silent -ip -location -no-color -threads 60 -web-server -websocket -l subs
-./httpx -silent -title -l subs
 result -> gf, params & paths using unfurl  
-paramspider - paramsfinding
+paramspider - paramsfinding, unfurl
+gf xss -> kxss, Gxss and dalfox -> rogueSMG
+
+Quickxss
+udhay-bro-10
+google dorks -> pygoogle - print links
+
+awesome-bugbounty-tools (starred)
+
+## scanners ##
+nuclei-template
+scant3r
+Autorecon
+magicRecon - imp
+
+############################################
+
+buildpacks:
+==========
+python
+php
+nodejs
+ruby
+perl
+apt

@@ -12,7 +12,6 @@ API_KEY = os.environ['API_KEY']
 DATABASE_URL = os.environ['DATABASE_URL']
 
 bot = telebot.TeleBot(API_KEY)
-bot.send_message(CHAT_ID, "Test Message from Reconator !")
 
 conn = psycopg2.connect(DATABASE_URL, sslmode='require')
 cur = conn.cursor()
@@ -23,7 +22,7 @@ cur.execute('''
 create table output (
 
 domain varchar(20),
-result varchar(10000000)
+result varchar(10485760)
 
 );
 
@@ -42,6 +41,8 @@ target varchar(50) NOT NULL
 
 ''')
 conn.commit()
+
+bot.send_message(CHAT_ID, "Test Notification from Reconator !")
 
 cur.close()
 conn.close()

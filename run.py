@@ -25,16 +25,43 @@ os.system(f"python modules/clickjacking {url}")
 #3_corstest
 os.system(f"python modules/corstest {url}")
 
-#4_subdomain_enumeration
-os.system(f"bash modules/subdomains.sh {url}")
-
-#5_dirbrute
-os.system(f"bash modules/dirb.sh {url}")
-
-#6_firwall_detection
+#4_firwall_detection
 os.system(f"bash modules/firewall.sh {url}")
 
-#7_urls_gather
+#5_davtest
+os.system(f"bash modules/davtest.sh {url}")
+
+#6_robots_check
+os.system(f"bash modules/robots.sh {url}")
+
+#7_subdomain_enumeration
+os.system(f"bash modules/subdomains.sh {url}")
+
+#8_dirbrute
+os.system(f"bash modules/dirb.sh {url}")
+
+#9_js+link_finder
+os.system(f"bash modules/js-finder.sh {url}")
+
+#10_subdomain_takeover
+os.system(f"bash modules/subtake.sh {url}")
+
+#11_subdomains_title_cname
+os.system(f"bash modules/sub_title_cname.sh {url}")
+
+#12_subdomains_ip_server
+os.system(f"bash modules/sub_ip_server.sh {url}")
+
+#13_whois_lookup
+os.system(f"bash modules/whois.sh {url}")
+
+#14_shcheck
+os.system(f"bash modules/shcheck.sh {url}")
+
+#15_wappalyzer_cli
+os.system(f"bash modules/wappy.sh {url}")
+
+#urls_gather
 os.system(f"bash modules/gather_urls.sh {url}")
 
 ###########################################################
