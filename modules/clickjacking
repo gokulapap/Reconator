@@ -55,12 +55,12 @@ def main():
 
     elif not status:
        print("\n[-] Website is not vulnerable to clickjacking !")
-       f.write("\n[-] Website is not vulnerable to clickjacking !")
+       f.write("\n[-] Website is not vulnerable to clickjacking")
     else:
        print('some error occured ! try again\n')
        f.write("\nsome error occured ! try again\n")
 
-    f.write("\n\n\n######################################################################\n######################################################################\n\n\n")
+    f.write("\n\n\n##########################################################################################\n##########################################################################################\n\n\n")
     f.close()
 
 if __name__ == '__main__':

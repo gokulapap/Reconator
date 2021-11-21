@@ -16,9 +16,11 @@ steps:
 
 adding index of all category in results page -> ctrl + f -> index name
 
-whois, wappy, shcheck
+
 blc
-js leaker
+gather urls
+awesome oneliners + https://thevillagehacker.gitbook.io/one-liners-for-bug-bounty-hunting + king of bug bounty tips
+js sep -> js leaker, js analyser 
 gau,hakrawl,gospider -> gf patterns + roguesmg
 result -> gf, params & paths using unfurl  
 paramspider - paramsfinding, unfurl

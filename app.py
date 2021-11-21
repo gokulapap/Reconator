@@ -754,6 +754,10 @@ def delete_item():
   conn.close()
   return redirect(url_for("check_queue"))
 
+@app.route("/issues")
+def issues():
+  return render_template("issues.html")
+
 @app.route("/output/<url>")
 def output(url):
   url = url

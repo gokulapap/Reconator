@@ -1,8 +1,8 @@
 url=$1
 
-printf "============================================\n" >> /app/results/$url-output.txt
-printf "======  FINAL RECON REPORT OF TARGET  ======\n" >> /app/results/$url-output.txt
-printf "============================================\n\n" >> /app/results/$url-output.txt
+printf "==============================================\n" >> /app/results/$url-output.txt
+printf "=======  FINAL RECON REPORT OF TARGET  =======\n" >> /app/results/$url-output.txt
+printf "==============================================\n\n" >> /app/results/$url-output.txt
 
 printf "[CTRL+F AND SEARCH THE REQUIRED RESULT]\n\n" >> /app/results/$url-output.txt
 printf "==== INDEX OF REPORT [$url] ==== \n\n" >> /app/results/$url-output.txt
@@ -24,6 +24,6 @@ printf "14 - SECURITY HEADERS CHECK\n" >> /app/results/$url-output.txt
 printf "15 - WEB TECHNOLOGIES\n" >> /app/results/$url-output.txt
 
 printf "\n\n\n" >> /app/results/$url-output.txt
-printf "######################################################################\n" >> /app/results/$url-output.txt
-printf "######################################################################" >> /app/results/$url-output.txt
+printf "##########################################################################################\n" >> /app/results/$url-output.txt
+printf "##########################################################################################" >> /app/results/$url-output.txt
 printf "\n\n\n" >> /app/results/$url-output.txt

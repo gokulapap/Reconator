@@ -17,6 +17,6 @@ sort /app/sub1 /app/sub2 /app/sub3 /app/sub4 | uniq | tee /app/$url-subs
 sort /app/sub1 /app/sub2 /app/sub3 /app/sub4 | uniq | tee -a /app/results/$url-output.txt
 
 printf "\n\n\n" >> /app/results/$url-output.txt
-printf "######################################################################" >> /app/results/$url-output.txt
-printf "\n######################################################################" >> /app/results/$url-output.txt
+printf "##########################################################################################\n" >> /app/results/$url-output.txt
+printf "##########################################################################################" >> /app/results/$url-output.txt
 printf "\n\n\n" >> /app/results/$url-output.txt
