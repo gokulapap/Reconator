@@ -758,6 +758,10 @@ def delete_item():
 def issues():
   return render_template("issues.html")
 
+@app.route("/about")
+def about():
+  return redirect("https://github.com/gokulapap/Reconator/wiki")
+
 @app.route("/output/<url>")
 def output(url):
   url = url
