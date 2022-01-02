@@ -1,3 +1,4 @@
+
 # sends test notification
 # creates a db table
 
@@ -22,8 +23,8 @@ cur.execute('''
 create table output (
 
 domain varchar(20),
-result varchar(10485760)
-
+result varchar(10485760),
+gau varchar(10485760)
 );
 
 ''')
