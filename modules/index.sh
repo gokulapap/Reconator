@@ -22,8 +22,8 @@ printf "12 - SUBDOMAINS [IP + WEBSERVER]\n" >> /app/results/$url-output.txt
 printf "13 - WHOIS LOOKUP\n" >> /app/results/$url-output.txt
 printf "14 - SECURITY HEADERS CHECK\n" >> /app/results/$url-output.txt
 printf "15 - WEB TECHNOLOGIES\n" >> /app/results/$url-output.txt
-printf "16 - GATHERING ALL URLS" >> /app/results/$url-output.txt
-printf "17 - GF PATTERNS" >> /app/results/$url-output.txt
+printf "16 - GATHERING ALL URLS\n" >> /app/results/$url-output.txt
+printf "17 - GF PATTERNS\n" >> /app/results/$url-output.txt
 
 printf "\n\n\n" >> /app/results/$url-output.txt
 printf "##########################################################################################\n" >> /app/results/$url-output.txt
