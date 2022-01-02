@@ -820,7 +820,7 @@ def results():
 #########################################################################
 
 @app.route("/gau/<url>")
-def gau_urls():
+def gau_urls(url):
   url = url
   DATABASE_URL = os.environ['DATABASE_URL']
   conn = psycopg2.connect(DATABASE_URL, sslmode='require')
