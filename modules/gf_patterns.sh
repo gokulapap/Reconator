@@ -8,8 +8,11 @@ for i in $(/app/modules/binaries/gf -list)
 do
  /app/modules/binaries/gf $i /app/results/$url-gau.txt | tee /app/gf/$i-$url
  if [ -s /app/gf/$i-$url ]; then
-   printf "GF PATTERN : $i : \n\n" >> /app/results/$url-output.txt
+   printf "=============================" >> /app/results/$url-output.txt
+   printf "\n\nGF PATTERN : $i \n\n" >> /app/results/$url-output.txt
+   printf "=============================\n\n" >> /app/results/$url-output.txt
    cat /app/gf/$i-$url | tee -a /app/results/$url-output.txt
+   printf "\n\n" >> /app/results/$url-output.txt
  fi
 done
 
