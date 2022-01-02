@@ -5,6 +5,8 @@ import base64
 
 app = Flask(__name__)
 
+#########################################################################
+
 @app.route("/")
 def home():
   try:
@@ -12,6 +14,8 @@ def home():
     return render_template("index.html")
   except:
     return render_template("index.html")
+
+#########################################################################
 
 @app.route("/adder", methods=["GET", "POST"])
 def adder():
@@ -29,6 +33,8 @@ def adder():
   conn.close()
 
   return render_template("index.html", info="Added to queue !")
+
+#########################################################################
 
 @app.route("/queue")
 def check_queue():
@@ -386,6 +392,8 @@ font-size:10px;
 
   return res
 
+#########################################################################
+
 @app.route("/scanned")
 def scanned():
   s1 = r'''
@@ -738,6 +746,8 @@ font-size:10px;
   conn.close()
   return res
 
+#########################################################################
+
 @app.route("/delete", methods=["POST"])
 def delete_item():
   t = request.form
@@ -754,13 +764,19 @@ def delete_item():
   conn.close()
   return redirect(url_for("check_queue"))
 
+#########################################################################
+
 @app.route("/issues")
 def issues():
   return render_template("issues.html")
 
+#########################################################################
+
 @app.route("/about")
 def about():
   return redirect("https://github.com/gokulapap/Reconator/wiki")
+
+#########################################################################
 
 @app.route("/output/<url>")
 def output(url):
@@ -785,6 +801,7 @@ def output(url):
   conn.close()
   return send_file("/app/results/{}-output.txt".format(url))
 
+#########################################################################
 
 @app.route("/initialise")
 def initialise():
@@ -794,9 +811,13 @@ def initialise():
   except:
     return "Initialised Already Go to Home page !!"
 
+#########################################################################
+
 @app.route("/results")
 def results():
    return "Results Here!"
+
+#########################################################################
 
 if __name__ == "__main__":
   app.run(port=8000)
