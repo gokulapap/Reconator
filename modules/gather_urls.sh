@@ -13,7 +13,7 @@ printf "\n\n" >> /app/results/$url-output.txt
 cat /app/urls | qsreplace -a | tee /app/results/$url-gau.txt
 
 printf "Gathered all urls for the $url successfully !\n" >> /app/results/$url-output.txt
-printf "Goto /gau/{url} to download the gau_urls file" >> /app/results/$url-output.txt
+printf "Goto /gau/{url} to view all the gathered urls | Download the file for your future recon" >> /app/results/$url-output.txt
 
 printf "\n\n\n" >> /app/results/$url-output.txt
 printf "##########################################################################################\n" >> /app/results/$url-output.txt
