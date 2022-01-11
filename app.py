@@ -349,7 +349,7 @@ font-size:10px;
         <li><a href="#">About</a></li>
         <li><a class="active" href="#">Queue</a></li>
         <li><a href="scanned">Scanned</a></li>
-        <li><a href="#">Issues</a></li>
+        <li><a href="issues">Issues</a></li>
       </ul>
     </nav>
 
@@ -706,7 +706,7 @@ font-size:10px;
         <li><a href="#">About</a></li>
         <li><a href="queue">Queue</a></li>
         <li><a class="active" href="#">Scanned</a></li>
-        <li><a href="#">Issues</a></li>
+        <li><a href="issues">Issues</a></li>
       </ul>
     </nav>
 
@@ -807,9 +807,9 @@ def output(url):
 def initialise():
   try:
     os.system('python initialise.py')
-    return 'Initialised sucessfully ! test notification sent to your telegram \/'
+    return "<h2>Initialised sucessfully ! test notification sent to your telegram \/ </h2>"
   except:
-    return "Initialised Already Go to Home page !!"
+    return "<h2> Initialised Already Go to Home page !! </h2>"
 
 #########################################################################
 

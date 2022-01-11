@@ -16,7 +16,6 @@ steps:
 
 adding index of all category in results page -> ctrl + f -> index name
 
-
 blc
 gather urls
 awesome oneliners + https://thevillagehacker.gitbook.io/one-liners-for-bug-bounty-hunting + king of bug bounty tips
