@@ -1,3 +1,5 @@
+
+
 echo "17) GF PATTERNS" >> /app/results/$url-output.txt
 printf "\n\n" >> /app/results/$url-output.txt
 

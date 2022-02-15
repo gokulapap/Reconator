@@ -1,0 +1,7 @@
+admin
+adminlogin
+login
+administrator
+cpanel
+dashboard
+

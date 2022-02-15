@@ -11,9 +11,9 @@ echo "9) JS FINDER + LINK FINDER" >> /app/results/${url}-output.txt
 printf "\n\n" >> /app/results/${url}-output.txt
 
 printf "JS FINDER :\n\n" >> /app/results/${url}-output.txt
-/app/modules/binaries/gospider -s $furl -t 70 -d 3 | grep "\[javascript" | tee -a /app/results/${url}-output.txt
+/app/modules/binaries/gospider -s $furl -t 30 -d 1 | grep "\[javascript" | tee -a /app/results/${url}-output.txt
 printf "\n\nLINK FINDER :\n\n" >> /app/results/${url}-output.txt
-/app/modules/binaries/gospider -s $furl -t 70 -d 3 | grep "\[linkfinder" | tee -a /app/results/${url}-output.txt
+/app/modules/binaries/gospider -s $furl -t 30 | grep "\[linkfinder" | tee -a /app/results/${url}-output.txt
 
 
 printf "\n\n\n" >> /app/results/$url-output.txt
