@@ -5,7 +5,7 @@ Documentation for Reconator
 <h1 align="center">
   <br>
   <a href="https://github.com/gokulapap/Reconator">
-  <img src="https://oshi.at/rLPd/reconator.png" alt="reconator">
+  <img src="./static/reconator.png" alt="reconator">
   </a>
   <br>
 </h1>
