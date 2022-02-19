@@ -54,7 +54,7 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
 | path | Description |
 |------|-------------|
 | (/) home | Root page where you will add targets  |
-| /initialise | Initialise the Database and the conjob |
+| /initialise | Initialise the Database and the cronjob |
 | /queue | The targets added will be in the queue can manage targets |
 | /scanned | It contains list of all scanned targets can view results by results |
 | /issues | It has a quick link for reporting a issue and tool improvement |
