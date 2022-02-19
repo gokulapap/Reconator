@@ -79,13 +79,6 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
 ## 💬 Community & Discussion
 
 Join Our Telegram server [here](https://t.me/+cpbGih_iO50wNDg1)
-
-## 🤝 Helping hands 🤝
-
- - <a href="https://github.com/jopraveen">Jopraveen</a> (Video Editing & FrontEnd)
- - <a href="https://github.com/santhasarooban">Santroo</a> (FrontEnd design)
- - <a href="https://github.com/0xGodson">Godson</a> (Script Searching)
- - <a href="https://github.com/venom33cm">Yashwant</a> (FrontEnd design)
   
 ## :information_source: How to contribute:
  
@@ -98,12 +91,19 @@ If you want to contribute to this project then:
 - Take a look at the [wiki](https://github.com/gokulapap/Reconator/wiki) section.  
 - Check [FAQ](https://github.com/gokulapap/Reconator/wiki) for commonly asked questions.  
 - Ask for help in the [Telegram group](https://t.me/+cpbGih_iO50wNDg1)
+
+## 🤝 Helping hands 🤝
+
+ - <a href="https://github.com/jopraveen">Jopraveen</a> (Video Editing & FrontEnd)
+ - <a href="https://github.com/santhasarooban">Santroo</a> (FrontEnd design)
+ - <a href="https://github.com/0xGodson">Godson</a> (Script Searching)
+ - <a href="https://github.com/venom33cm">Yashwant</a> (FrontEnd design)
   
 ## ⚠️ Disclaimer
 Usage of this program for attacking targets without consent is illegal. It is the user's responsibility to obey all applicable laws. The developer assumes no liability and is not responsible for any misuse or damage caused by this program. Please use responsibly.
 
 The material contained in this repository is licensed under GNU GPLv3.
 
-## License
+## 📜 License
 
-`Reconator` is made with ♥ by [@gokulap](https://twitter.com/CodingGokul) and it is released under the GPL-3.0 License 
+`Reconator` is made with ♥ by [@gokulap](https://twitter.com/CodingGokul) and it is released under the GPL 3.0 License 
