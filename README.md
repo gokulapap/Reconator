@@ -53,7 +53,7 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
 
 ## 📹 Trailer Video 
 
-<video width="320" height="240" controls>
+<video width="320" height="240">
 <source src="https://user-images.githubusercontent.com/57899332/154802823-c9c01d57-887d-494c-9544-3fbe4d541432.mp4" type="video/mp4">
 </video> 
 
