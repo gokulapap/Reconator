@@ -14,7 +14,7 @@ argparse
 python-Wappalyzer
 aiodns==3.0.0
 aiofiles==0.7.0
-aiohttp==3.7.4.post0
+aiohttp
 aiomultiprocess==0.9.0
 aiosqlite==0.17.0
 beautifulsoup4==4.10.0
@@ -33,6 +33,6 @@ shodan==1.25.0
 slowapi==0.1.5
 spyse-python==2.2.3
 starlette==0.14.2
-lxml==4.6.3
+lxml
 uvicorn==0.15.0
 uvloop==0.16.0
