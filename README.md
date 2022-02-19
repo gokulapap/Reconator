@@ -47,13 +47,15 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
 
 [![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/gokulapap/reconator)
 
-## Demo Video
+## 📹 Demo Video
 
 **Loading ...**
 
-## Trailer Video 
+## 📹 Trailer Video 
 
-https://user-images.githubusercontent.com/57899332/154802823-c9c01d57-887d-494c-9544-3fbe4d541432.mp4
+<video width="320" height="240" controls>
+<source src="https://user-images.githubusercontent.com/57899332/154802823-c9c01d57-887d-494c-9544-3fbe4d541432.mp4" type="video/mp4">
+</video> 
 
 ## 📕 Usage
 
