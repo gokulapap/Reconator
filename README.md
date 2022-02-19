@@ -59,14 +59,6 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
 | /scanned | It contains list of all scanned targets can view results by results |
 | /issues | It has a quick link for reporting a issue and tool improvement |
  
-
-## Features
-
-<li> Database support permanent storage
-<li> Fast scan and 100% Free
-<li> Notification support via Telegram bot
-<li> More...
-  
 # :fire: Features :fire:
  
 - Systemless Recon automation
@@ -80,7 +72,7 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
 - Runs 24/7 for 22 Days [Heroku - 550 hrs/month free]
   
 
-  <h4> 📝 **More Features in next update** </h4>
+<h3> 📝 More Features and More Recon tools will be added in next update </h3>
   
 <hr> 
   
