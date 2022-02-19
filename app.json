@@ -2,6 +2,7 @@
   "name" : "Reconator",
   "description": "An Automated Recon Framework",
   "repository": "https://github.com/gokulapap/Reconator",
+  "logo": "https://i.imgur.com/OuplaeQ.png",
   "keywords": ["python", "recon", "automation"],
   "website": "https://t.me/phaticusthiccy",
   "success_url": "https://t.me/AsenaSupport",
