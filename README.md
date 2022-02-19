@@ -104,6 +104,6 @@ Usage of this program for attacking targets without consent is illegal. It is th
 
 The material contained in this repository is licensed under GNU GPLv3.
 
-## 📜 License
+## 🧾 License
 
 `Reconator` is made with ♥ by [@gokulap](https://twitter.com/CodingGokul) and it is released under the GPL 3.0 License 
