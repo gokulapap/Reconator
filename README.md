@@ -97,7 +97,7 @@ If you want to contribute to this project then:
 ## :information_source: Need help?
  
 - Take a look at the [wiki](https://github.com/gokulapap/Reconator/wiki) section.  
-- Check [FAQ](https://github.com/gokulapap/Reconator/wiki) for commonly asked questions.  
+- Check [FAQ](https://github.com/gokulapap/Reconator/wiki/FAQ) for commonly asked questions.  
 - Ask for help in the [Telegram group](https://t.me/+cpbGih_iO50wNDg1)
 
 ## 🤝 Helping hands 🤝
