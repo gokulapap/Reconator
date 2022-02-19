@@ -69,8 +69,8 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
  
 ## :fire: Features :fire:
  
-- Systemless Recon automation
-- Fast scan and 100% Free
+- Systemless Recon 100% Free
+- Fast scan and Easy to use
 - Permanent storage of Results in DB
 - Notification support via Telegram bot
 - Fully Automated Scanner
