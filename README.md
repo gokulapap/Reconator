@@ -69,7 +69,7 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
   
 # :fire: Features :fire:
  
-- Systemless Recon
+- Systemless Recon automation
 - Fast scan and 100% Free
 - Permanent storage of Results in DB
 - Notification support via Telegram bot
@@ -78,6 +78,8 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
 - Queue support allows to add many targets
 - Easy Deploy Easy Recon
 - Runs 24/7 for 22 Days [Heroku - 550 hrs/month free]
+  
+**More Features in next update**
   
 <hr> 
   
