@@ -94,9 +94,9 @@ If you want to contribute to this project then:
  
 ## Need help? :information_source:
  
-- Take a look at the [wiki](https://github.com/six2dez/reconftw/wiki) section.  
-- Check [FAQ](https://github.com/six2dez/reconftw/wiki/7.-FAQs) for commonly asked questions.  
-- Ask for help in the [Telegram group](https://t.me/joinchat/TO_R8NYFhhbmI5co)
+- Take a look at the [wiki](https://github.com/gokulapap/Reconator/wiki) section.  
+- Check [FAQ](https://github.com/gokulapap/Reconator/wiki) for commonly asked questions.  
+- Ask for help in the [Telegram group](https://t.me/+cpbGih_iO50wNDg1)
   
 ## Disclaimer
 Usage of this program for attacking targets without consent is illegal. It is the user's responsibility to obey all applicable laws. The developer assumes no liability and is not responsible for any misuse or damage caused by this program. Please use responsibly.
