@@ -43,11 +43,11 @@ It also performs various vulnerability checks like XSS, Open Redirects, SSRF, CR
 Reconator receives all the targets needs to be reconed via a Web Interface and adds into the Queue and Notifies via Telebot on start and end of Recon on a target. So this is 100% automated and don't require any manual interaction
 
 
-# Deploy
+# ⚙️ Deploy
 
 [![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/gokulapap/reconator)
 
-# Usage
+# 📕 Usage
 
 **APPLICATION PATHS**
  
@@ -76,7 +76,7 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
   
 <hr> 
   
-## Helping hands 🤝
+## 🤝 Helping hands 🤝
 
  - <a href="https://github.com/jopraveen">Jopraveen</a> (Video Editing & FrontEnd)
  - <a href="https://github.com/santhasarooban">Santroo</a> (FrontEnd design)
