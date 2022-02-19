@@ -79,7 +79,8 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
 - Easy Deploy Easy Recon
 - Runs 24/7 for 22 Days [Heroku - 550 hrs/month free]
   
-**More Features in next update**
+
+  <h4> 📝 **More Features in next update** </h4>
   
 <hr> 
   
