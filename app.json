@@ -4,8 +4,8 @@
   "repository": "https://github.com/gokulapap/Reconator",
   "logo": "https://i.imgur.com/OuplaeQ.png",
   "keywords": ["python", "recon", "automation"],
-  "website": "https://t.me/phaticusthiccy",
-  "success_url": "https://t.me/AsenaSupport",
+  "website": "https://t.me/+cpbGih_iO50wNDg1",
+  "success_url": "https://t.me/+cpbGih_iO50wNDg1",
   "env": {
         "API_KEY": {
             "description": "Go to BotFather bot in telegram https://telegram.me/BotFather and create a bot to get the api key",
