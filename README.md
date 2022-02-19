@@ -69,14 +69,16 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
   
 # :fire: Features :fire:
  
- ## Osint
-- Domain information parser ([domainbigdata](https://domainbigdata.com/))
-- Emails addresses and users ([theHarvester](https://github.com/laramies/theHarvester), [emailfinder](https://github.com/Josue87/EmailFinder))
-- Password leaks ([pwndb](https://github.com/davidtavarez/pwndb) and [H8mail](https://github.com/khast3x/h8mail))
-- Metadata finder ([MetaFinder](https://github.com/Josue87/MetaFinder))
-- Google Dorks ([uDork](https://github.com/m3n0sd0n4ld/uDork))
-- Github Dorks ([GitDorker](https://github.com/obheda12/GitDorker))
-
+- Systemless Recon
+- Fast scan and 100% Free
+- Permanent storage of Results in DB
+- Notification support via Telegram bot
+- Fully Automated Scanner
+- Easy access via Web UI
+- Queue support allows to add many targets
+- Easy Deploy Easy Recon
+- Runs 24/7 for 22 Days [Heroku - 550 hrs/month free]
+  
 <hr> 
   
 ## Helping hands 🤝
@@ -102,4 +104,3 @@ If you want to contribute to this project then:
 Usage of this program for attacking targets without consent is illegal. It is the user's responsibility to obey all applicable laws. The developer assumes no liability and is not responsible for any misuse or damage caused by this program. Please use responsibly.
 
 The material contained in this repository is licensed under GNU GPLv3.
-
