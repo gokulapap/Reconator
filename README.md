@@ -52,7 +52,7 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
 - Heroku Free account (For Deploying)
 - Telegram account (For notifications)
 
-## 📹 Demo Video
+## 📹 Demo Video of Deploying
 
 [![Reconator](https://img.youtube.com/vi/j6Cw_tZ7ri0/0.jpg)](https://youtu.be/j6Cw_tZ7ri0)
 
