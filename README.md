@@ -54,11 +54,12 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
 
 ## 📹 Demo Video of Deploying
 
-[![Reconator](https://img.youtube.com/vi/j6Cw_tZ7ri0/0.jpg)](https://youtu.be/j6Cw_tZ7ri0)
+[![Reconator Demo](https://img.youtube.com/vi/j6Cw_tZ7ri0/0.jpg)](https://youtu.be/j6Cw_tZ7ri0)
 
 ## 📹 Trailer Video 
 
-[![Watch the video]](https://user-images.githubusercontent.com/57899332/154802823-c9c01d57-887d-494c-9544-3fbe4d541432.mp4)
+[![Reconator Trailer](https://img.youtube.com/vi/ldWuJiDfotA/0.jpg)](https://www.youtube.com/watch?v=ldWuJiDfotA)
+
 
 ## 📕 Usage
 
