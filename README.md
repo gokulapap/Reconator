@@ -112,6 +112,10 @@ If you want to contribute to this project then:
  - <a href="https://github.com/santhasarooban">Santroo</a> (FrontEnd design)
  - <a href="https://github.com/0xGodson">Godson</a> (Script Searching)
  - <a href="https://github.com/venom33cm">Yashwant</a> (FrontEnd design)
+
+## You can support this work buying me a coffee:
+ 
+[<img src="https://cdn.buymeacoffee.com/buttons/v2/default-green.png">](https://www.buymeacoffee.com/gokulap)
   
 ## ⚠️ Disclaimer
 Usage of this program for attacking targets without consent is illegal. It is the user's responsibility to obey all applicable laws. The developer assumes no liability and is not responsible for any misuse or damage caused by this program. Please use responsibly.
