@@ -13,7 +13,7 @@ os.system("touch results/{}-output.txt".format(url))
 os.system("chmod 777 /app/* -R")
 
 bot.send_message(chat_id, f"Recon started for {url} !")
-bot.send_message(chat_id, "[+] If you're not getting the notification on finish, Try restarting dynos")
+bot.send_message(chat_id, "[+] If you're not getting the notification on finish, Try restarting dynos\n[+] The Scan time may take longer for larger targets")
 
 #0_index_of_results
 os.system(f"bash modules/index.sh {url}")
