@@ -8,9 +8,16 @@ import telebot
 
 bot = telebot.TeleBot(os.environ['API_KEY'])
 chat_id = os.environ['CHAT_ID']
+last = False
 
 url = sys.argv[1]
 DATABASE_URL = os.environ['DATABASE_URL']
+
+try:
+  temp = sys.argv[2]
+  last = True
+except:
+  pass
 
 conn = psycopg2.connect(DATABASE_URL, sslmode='require')
 cur = conn.cursor()
@@ -71,6 +78,7 @@ else:
 
 conn.commit()
 
-bot.send_message(chat_id, f"scanned results of {url} is saved in db")
+if last:
+   bot.send_message(chat_id, f"scanned results of {url} is saved in db")
 cur.close()
 conn.close()
