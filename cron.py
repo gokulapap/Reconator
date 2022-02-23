@@ -22,8 +22,8 @@ while True:
 
    #sends to run.py
    os.system('python run.py {}'.format(url))
-   #30 minutes sleep for scan to be finished
-   sleep(1740)
+   #next scan starts after 1 minute
+   sleep(60)
 
  except:
    sleep(60)
