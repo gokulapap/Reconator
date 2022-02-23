@@ -56,25 +56,38 @@ if url in doms:
   conn.commit()
 
 else:
-  #read from output.txt and dump in database
-  f = open('results/{}-output.txt'.format(url), 'r')
-  res1 = f.read()
-  f.close()
-
-  f = open('results/{}-gau.txt'.format(url), 'r')
-  res2 = f.read()
-  f.close()
-
-  res1 = bytes(res1, 'utf-8')
-  final1 = base64.standard_b64encode(res1)
-  final1 = final1.decode('utf-8')
-
-  res2 = bytes(res2, 'utf-8')
-  final2 = base64.standard_b64encode(res2)
-  final2 = final2.decode('utf-8')
-
-  cur.execute(f"insert into output values ('{url}', '{final1}', '{final2}');")
-  conn.commit()
+  try:
+    #read from output.txt and dump in database
+    f = open('results/{}-output.txt'.format(url), 'r')
+    res1 = f.read()
+    f.close()
+  
+    f = open('results/{}-gau.txt'.format(url), 'r')
+    res2 = f.read()
+    f.close()
+  
+    res1 = bytes(res1, 'utf-8')
+    final1 = base64.standard_b64encode(res1)
+    final1 = final1.decode('utf-8')
+  
+    res2 = bytes(res2, 'utf-8')
+    final2 = base64.standard_b64encode(res2)
+    final2 = final2.decode('utf-8')
+  
+    cur.execute(f"insert into output values ('{url}', '{final1}', '{final2}');")
+    conn.commit()
+  except:
+    #read from output.txt and dump in database
+    f = open('results/{}-output.txt'.format(url), 'r')
+    res1 = f.read()
+    f.close()
+  
+    res1 = bytes(res1, 'utf-8')
+    final1 = base64.standard_b64encode(res1)
+    final1 = final1.decode('utf-8')
+    
+    cur.execute(f"insert into output values ('{url}', '{final1}', 'The Gathered URLs not run yet !');")
+    conn.commit()
 
 conn.commit()
 
