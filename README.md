@@ -13,7 +13,7 @@ Documentation for Reconator
 
 <p align="center">
   <a href="https://github.com/gokulapap/Reconator">
-    <img src="https://img.shields.io/badge/release-v1.0.0-green">
+    <img src="https://img.shields.io/badge/release-v1.0-green">
   </a>
    </a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">
