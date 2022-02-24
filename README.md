@@ -16,7 +16,7 @@ Documentation for Reconator
     <img src="https://img.shields.io/badge/release-v1.0-green">
   </a>
    </a>
-  <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">
+  <a href="https://github.com/gokulapap/Reconator/blob/master/LICENSE">
       <img src="https://img.shields.io/badge/license-GPL3-_red.svg">
   </a>
   <a href="https://twitter.com/CodingGokul">
