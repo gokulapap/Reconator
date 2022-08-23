@@ -1,0 +1,4 @@
+{
+    "flags": "-HnriE",
+    "pattern": "phpinfo|posix_mkfifo|posix_getlogin|posix_ttyname|getenv|get_current_user|proc_get_status|get_cfg_var|disk_free_space|disk_total_space|diskfreespace|getcwd|getlastmo|getmygid|getmyinode|getmypid|getmyuid"
+}

@@ -1,0 +1,4 @@
+{
+    "flags": "-HnriE",
+    "pattern": "(location(\\.href)?( ?=|\\.replace)|eval\\(|(setTimeout|setInterval)\\([\\\"']|new Function\\([\\\"'])"
+}

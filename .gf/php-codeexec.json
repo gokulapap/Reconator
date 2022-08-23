@@ -1,0 +1,4 @@
+{
+    "flags": "-HnriE",
+    "pattern": "assert\\(|eval\\(|preg_replace\\(|create_function\\(|include\\(|include_once\\(|require\\(|require_once\\("
+}
