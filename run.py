@@ -20,25 +20,25 @@ os.system(f"bash modules/index.sh {url}")
 
 #1_dnscan
 os.system(f"bash modules/dnscan.sh {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
 #2_clickjacking
 os.system(f"python3 modules/clickjacking {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
 #3_corstest
 os.system(f"python3 modules/corstest {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
 #4_firwall_detection
 os.system(f"bash modules/firewall.sh {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
@@ -50,43 +50,43 @@ sleep(4)
 
 #6_robots_check
 os.system(f"bash modules/robots.sh {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
 #7_subdomain_enumeration
 os.system(f"bash modules/subdomains.sh {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
 #8_dirbrute
 os.system(f"bash modules/dirb.sh {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
 #9_js+link_finder
 os.system(f"bash modules/js-finder.sh {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
 #10_subdomain_takeover
 os.system(f"bash modules/subtake.sh {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
 #11_subdomains_title_cname
 os.system(f"bash modules/sub_title_cname.sh {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
 #12_subdomains_ip_server
 os.system(f"bash modules/sub_ip_server.sh {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
@@ -98,28 +98,28 @@ sleep(4)
 
 #14_shcheck
 os.system(f"bash modules/shcheck.sh {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
 #15_wappalyzer_cli
 os.system(f"bash modules/wappy.sh {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
 #16_urls_gather
 os.system(f"bash modules/gather_urls.sh {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 sleep(4)
 
 #17_seperating_with_gf_patterns
 os.system(f"bash modules/gf_patterns.sh {url}")
-os.system('python3 insert.py {}'.format(url))
+os.system('python insert.py {}'.format(url))
 
 ###########################################################
 
 bot.send_message(chat_id, f"Recon for {url} is completed ! you can check the results now on website at path /scanned !")
 #dumping to database with insert.py
-os.system('python3 insert.py {} last'.format(url))
+os.system('python insert.py {} last'.format(url))
