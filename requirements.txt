@@ -1,5 +1,5 @@
 flask
-pip3
+pip
 python3
 gunicorn
 flask_cors
