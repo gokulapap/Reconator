@@ -21,7 +21,7 @@
       "url": "heroku-community/apt"
     },
     {
-      "url": "heroku/python"
+      "url": "heroku/python3"
     },
     {
       "url": "heroku/php"
