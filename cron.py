@@ -21,7 +21,7 @@ while True:
    conn.commit()
 
    #sends to run.py
-   os.system('python3 run.py {}'.format(url))
+   os.system('python run.py {}'.format(url))
    #next scan starts after 1 minute
    sleep(60)
 
