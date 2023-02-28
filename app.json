@@ -21,9 +21,6 @@
       "url": "heroku-community/apt"
     },
     {
-      "url":"heroku/pip"
-    },
-    {
       "url": "heroku/python"
     },
     {
