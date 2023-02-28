@@ -17,6 +17,7 @@ bot.send_message(chat_id, "[+] If you're not getting the notification on finish,
 
 #0_index_of_results
 os.system(f"bash modules/index.sh {url}")
+os.system('pip install -r requirements.txt {}'.format(url))
 
 #1_dnscan
 os.system(f"bash modules/dnscan.sh {url}")
