@@ -10,7 +10,7 @@ app = Flask(__name__)
 @app.route("/")
 def home():
   try:
-    os.system('python initialise.py')
+    os.system('python3 initialise.py')
     return render_template("index.html")
   except:
     return render_template("index.html")
