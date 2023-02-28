@@ -1,5 +1,6 @@
 flask
-pip
+pip3
+python3
 gunicorn
 flask_cors
 psycopg2-binary
