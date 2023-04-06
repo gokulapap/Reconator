@@ -10,11 +10,16 @@ import telebot
 
 CHAT_ID = os.environ['CHAT_ID']
 API_KEY = os.environ['API_KEY']
-DATABASE_URL = os.environ['DATABASE_URL']
 
 bot = telebot.TeleBot(API_KEY)
 
-conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+conn = psycopg2.connect(
+    host="db",
+    database="test_db",
+    user="test_user",
+    password="test_password"
+)
+
 cur = conn.cursor()
 
 # to save the result of recon on target

@@ -5,6 +5,15 @@ import base64
 
 app = Flask(__name__)
 
+conn = psycopg2.connect(
+    host="db",
+    database="test_db",
+    user="test_user",
+    password="test_password"
+)
+
+cur = conn.cursor()
+
 #########################################################################
 
 @app.route("/")
@@ -21,16 +30,9 @@ def home():
 def adder():
  if request.method == "POST":
   url = request.form.get('url')
-  DATABASE_URL = os.environ['DATABASE_URL']
-
-  conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-  cur = conn.cursor()
 
   cur.execute(f"insert into queue (target) values ('{url}')")
   conn.commit()
-
-  cur.close()
-  conn.close()
 
   return render_template("index.html", info="Added to queue !")
 
@@ -369,9 +371,6 @@ font-size:10px;
   res = ''
   res = res + q1
 
-  DATABASE_URL = os.environ['DATABASE_URL']
-  conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-  cur = conn.cursor()
   cur.execute("select * from queue")
   t = cur.fetchall()
 
@@ -387,8 +386,6 @@ font-size:10px;
 
   res = res + q2
   conn.commit()
-  cur.close()
-  conn.close()
 
   return res
 
@@ -724,9 +721,6 @@ font-size:10px;
   res = ''
   res = res + s1
 
-  DATABASE_URL = os.environ['DATABASE_URL']
-  conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-  cur = conn.cursor()
   cur.execute("select domain from output")
   t = cur.fetchall()
 
@@ -742,8 +736,6 @@ font-size:10px;
 
   res = res + s2
   conn.commit()
-  cur.close()
-  conn.close()
   return res
 
 #########################################################################
@@ -755,13 +747,9 @@ def delete_item():
   key = list(dic.keys())
   id = key[0]
 
-  DATABASE_URL = os.environ['DATABASE_URL']
-  conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-  cur = conn.cursor()
   cur.execute("delete from queue where id={}".format(id))
   conn.commit()
-  cur.close()
-  conn.close()
+
   return redirect(url_for("check_queue"))
 
 #########################################################################
@@ -781,9 +769,6 @@ def about():
 @app.route("/output/<url>")
 def output(url):
   url = url
-  DATABASE_URL = os.environ['DATABASE_URL']
-  conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-  cur = conn.cursor()
 
   cur.execute(f"select result from output where domain = '{url}'")
   t = cur.fetchall()
@@ -797,8 +782,7 @@ def output(url):
   f.close()
 
   conn.commit()
-  cur.close()
-  conn.close()
+
   return send_file("/app/results/{}-output.txt".format(url))
 
 #########################################################################
@@ -822,9 +806,6 @@ def results():
 @app.route("/gau/<url>")
 def gau_urls(url):
   url = url
-  DATABASE_URL = os.environ['DATABASE_URL']
-  conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-  cur = conn.cursor()
 
   cur.execute(f"select gau from output where domain = '{url}'")
   t = cur.fetchall()
@@ -838,11 +819,11 @@ def gau_urls(url):
   f.close()
 
   conn.commit()
-  cur.close()
-  conn.close()
+
   return send_file("/app/results/{}-gau.txt".format(url))
 
 #########################################################################
 
 if __name__ == "__main__":
-  app.run(port=8000)
+  app.run(host='0.0.0.0', port=5000)
+

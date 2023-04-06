@@ -7,9 +7,14 @@ import base64
 import sys
 
 url = sys.argv[1]
-DATABASE_URL = os.environ['DATABASE_URL']
 
-conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+conn = psycopg2.connect(
+    host="db",
+    database="test_db",
+    user="test_user",
+    password="test_password"
+)
+
 cur = conn.cursor()
 
 cur.execute(f"select result from output where domain = '{url}'")

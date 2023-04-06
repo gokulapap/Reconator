@@ -1,3 +1,5 @@
+#!/usr/local/bin/python3
+
 from Wappalyzer import Wappalyzer, WebPage
 import argparse
 import requests

@@ -3,9 +3,13 @@ from time import sleep
 import psycopg2
 import base64
 
-DATABASE_URL = os.environ['DATABASE_URL']
+conn = psycopg2.connect(
+    host="db",
+    database="test_db",
+    user="test_user",
+    password="test_password"
+)
 
-conn = psycopg2.connect(DATABASE_URL, sslmode='require')
 cur = conn.cursor()
 
 #checks the db queue table every 60 secs

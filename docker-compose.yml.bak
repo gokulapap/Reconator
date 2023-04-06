@@ -1,0 +1,29 @@
+version: '3'
+
+services:
+  db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: mydb
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./pg_hba.conf:/var/lib/postgresql/data/pg_hba.conf
+    ports:
+      - 5432:5432
+
+  app:
+    build: .
+    ports:
+      - 5000:5000
+    environment:
+      CHAT_ID: 1214546863
+      API_KEY: 6247297064:AAFlsbd24qvsVBJXwwoBwbf562F6ty8ml-M
+    depends_on:
+      - db
+
+volumes:
+  db-data:
+

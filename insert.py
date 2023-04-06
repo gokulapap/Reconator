@@ -11,7 +11,6 @@ chat_id = os.environ['CHAT_ID']
 last = False
 
 url = sys.argv[1]
-DATABASE_URL = os.environ['DATABASE_URL']
 
 try:
   temp = sys.argv[2]
@@ -19,7 +18,13 @@ try:
 except:
   pass
 
-conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+conn = psycopg2.connect(
+    host="db",
+    database="test_db",
+    user="test_user",
+    password="test_password"
+)
+
 cur = conn.cursor()
 
 #checking if any previous entry in the database to avoid duplicates
