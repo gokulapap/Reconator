@@ -17,8 +17,8 @@ services:
     build: .
     container_name: reconator-app
     environment:
-      CHAT_ID: 1214546863
-      API_KEY: 6247297064:AAFlsbd24qvsVBJXwwoBwbf562F6ty8ml-M
+      CHAT_ID: <TELEGRAM_CHAT_ID>
+      API_KEY: <TELEGRAM_BOT_KEY>
     ports:
       - "5000:5000"
     depends_on:
