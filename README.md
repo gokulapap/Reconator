@@ -33,6 +33,8 @@ Documentation for Reconator
   </a>
 </p>
 
+
+
 <h2 align="center">Summary</h2>
  
 
@@ -42,6 +44,9 @@ It also performs various vulnerability checks like XSS, Open Redirects, SSRF, CR
 
 Reconator receives all the targets needs to be reconed via a Web Interface and adds into the Queue and Notifies via Telebot on start and end of Recon on a target. So this is 100% automated and don't require any manual interaction
 
+## :star: Star History
+
+<img src="https://user-images.githubusercontent.com/57899332/233918579-ed02e606-b474-4713-8d24-928eb4a0a8ab.png" height="380px" width="650px">
 
 ## ⚙️ Deploy
 
