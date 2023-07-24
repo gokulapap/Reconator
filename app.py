@@ -30,7 +30,9 @@ def home():
 def adder():
  if request.method == "POST":
   url = request.form.get('url')
-
+  if url == "":
+    return render_template("index.html", info="Cant add empty targets !")
+	  
   cur.execute(f"insert into queue (target) values ('{url}')")
   conn.commit()
 
