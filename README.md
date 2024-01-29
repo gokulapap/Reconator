@@ -46,7 +46,7 @@ Reconator receives all the targets needs to be reconed via a Web Interface and a
 
 ## :star: Star History
 
-<img src="https://user-images.githubusercontent.com/57899332/233918579-ed02e606-b474-4713-8d24-928eb4a0a8ab.png" height="380px" width="650px">
+[![Star History Chart](https://api.star-history.com/svg?repos=gokulapap/Reconator&type=Date)](https://star-history.com/#gokulapap/Reconator&Date)
 
 ## ⚙️ Deploy
 
