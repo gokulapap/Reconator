@@ -33,8 +33,6 @@ Documentation for Reconator
   </a>
 </p>
 
-
-
 <h2 align="center">Summary</h2>
  
 
