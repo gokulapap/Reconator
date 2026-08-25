@@ -18,6 +18,7 @@ import { api, type Asset, type ReconTaskStatus } from "@/lib/api";
 import { AssetInspector } from "@/components/AssetInspector";
 import { DistributionBars } from "@/components/DistributionBars";
 import { GraphExplorer } from "@/components/GraphExplorer";
+import { ResultQuality } from "@/components/ResultQuality";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -168,11 +169,23 @@ export function TargetDetail() {
     refetchInterval: scanIsLive && activeTab === "graph" ? 5000 : false,
   });
   const tasks = useQuery({
-    queryKey: ["tasks", targetId, taskPage],
+    queryKey: ["tasks", targetId, taskStatus, taskPage],
     queryFn: ({ signal }) =>
-      api.listTasks(targetId, { page: taskPage, page_size: 100, signal }),
+      api.listTasks(targetId, {
+        status: taskStatus === "all" ? undefined : taskStatus,
+        page: taskPage,
+        page_size: 100,
+        signal,
+      }),
     enabled: activeTab === "tasks",
     refetchInterval: scanIsLive && activeTab === "tasks" ? 3000 : false,
+  });
+  const qualityTasks = useQuery({
+    queryKey: ["task-quality-sample", targetId],
+    queryFn: ({ signal }) =>
+      api.listTasks(targetId, { page: 1, page_size: 500, signal }),
+    enabled: activeTab === "overview",
+    refetchInterval: scanIsLive && activeTab === "overview" ? 5000 : false,
   });
   const taskDetail = useQuery({
     queryKey: ["task", targetId, activeTask],
@@ -437,6 +450,13 @@ export function TargetDetail() {
               <CardContent><DistributionBars values={summary.data?.observations_by_module} /></CardContent>
             </Card>
           </div>
+          <ResultQuality
+            summary={summary.data}
+            taskSample={qualityTasks.data}
+            loading={summary.isLoading || qualityTasks.isLoading}
+            error={qualityTasks.error}
+            scanIsLive={scanIsLive}
+          />
           <div className="grid gap-4 lg:grid-cols-[1.15fr_.85fr]">
             <Card>
               <CardHeader><CardTitle className="text-base">Highest-priority discoveries</CardTitle></CardHeader>
@@ -520,8 +540,9 @@ export function TargetDetail() {
             <Card>
               <CardHeader className="space-y-3">
                 <CardTitle>Task execution graph</CardTitle>
-                <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" value={taskSearch} onChange={(event) => setTaskSearch(event.target.value)} placeholder="Module, capability, error" /></div>
-                <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={taskStatus} onChange={(event) => setTaskStatus(event.target.value as typeof taskStatus)}><option value="all">All task states</option>{Object.keys(summary.data?.tasks_by_status ?? {}).sort().map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select>
+                <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" value={taskSearch} onChange={(event) => setTaskSearch(event.target.value)} placeholder="Filter this page" aria-label="Filter tasks on this page" /></div>
+                <select aria-label="Filter task status" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={taskStatus} onChange={(event) => { setTaskStatus(event.target.value as typeof taskStatus); setTaskPage(1); }}><option value="all">All task states</option>{Object.keys(summary.data?.tasks_by_status ?? {}).sort().map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select>
+                <p className="text-[11px] text-muted-foreground">Status filtering runs across the complete scan. Text search filters only this page of {(tasks.data?.items.length ?? 0).toLocaleString()} task(s).</p>
               </CardHeader>
               <CardContent className="max-h-[68vh] overflow-auto px-2">
                 <ul className="space-y-1">

@@ -29,6 +29,18 @@ def test_asset_task_event_and_scope_apis(client):
     assert summary["assets_total"] == 1
     assert summary["assets_by_kind"] == {"domain": 1}
     assert summary["observations_by_module"] == {"core.seed": 1}
+    assert summary["source_yield"][0] == {
+        "source_module": "core.seed",
+        "source_name": "user",
+        "observations": 1,
+        "distinct_assets": 1,
+        "exclusive_assets": 1,
+        "average_confidence": 1.0,
+        "last_observed_at": summary["source_yield"][0]["last_observed_at"],
+    }
+    assert summary["module_health"][0]["tasks_total"] == 1
+    assert summary["module_health"][0]["tasks_by_status"] == {"queued": 1}
+    assert summary["module_health"][0]["failure_rate"] == 0
 
     tasks = client.get(f"/api/v1/targets/{target_id}/tasks").json()
     assert tasks["total"] == 1
@@ -51,6 +63,49 @@ def test_asset_task_event_and_scope_apis(client):
         },
     )
     assert add.status_code == 201, add.text
+
+
+def test_source_yield_distinguishes_exclusive_and_corroborated_assets(client, db):
+    from app.recon.knowledge import KnowledgeStore
+    from app.recon.modules.base import AssetEmission
+
+    target = create_passive(client, "yield.example.com")
+    store = KnowledgeStore(db)
+    store.observe_asset(
+        target_id=target["id"],
+        task_id=None,
+        module_name="passive.alpha",
+        emission=AssetEmission(
+            "domain",
+            "unique.yield.example.com",
+            source_name="alpha-index",
+        ),
+    )
+    for module_name, source_name in (
+        ("passive.alpha", "alpha-index"),
+        ("passive.beta", "beta-index"),
+    ):
+        store.observe_asset(
+            target_id=target["id"],
+            task_id=None,
+            module_name=module_name,
+            emission=AssetEmission(
+                "domain",
+                "shared.yield.example.com",
+                confidence=0.8,
+                source_name=source_name,
+            ),
+        )
+    db.commit()
+
+    summary = client.get(f"/api/v1/targets/{target['id']}/knowledge-summary").json()
+    sources = {
+        (item["source_module"], item["source_name"]): item for item in summary["source_yield"]
+    }
+    assert sources[("passive.alpha", "alpha-index")]["distinct_assets"] == 2
+    assert sources[("passive.alpha", "alpha-index")]["exclusive_assets"] == 1
+    assert sources[("passive.beta", "beta-index")]["distinct_assets"] == 1
+    assert sources[("passive.beta", "beta-index")]["exclusive_assets"] == 0
 
 
 def test_scan_comparison_endpoint(client, db):

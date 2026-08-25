@@ -29,11 +29,13 @@ from app.schemas.recon import (
     EventRead,
     GraphResponse,
     KnowledgeStats,
+    ModuleHealth,
     RelationshipRead,
     ScanComparison,
     ScanKnowledgeSummary,
     ScopeRuleCreate,
     ScopeRuleRead,
+    SourceYield,
     TaskDetail,
     TaskList,
     TaskRead,
@@ -217,12 +219,111 @@ def scan_knowledge_summary(
         .where(AssetObservation.target_id == target_id)
         .group_by(AssetObservation.source_module)
     ).all()
+    source_name_key = func.coalesce(AssetObservation.source_name, "")
+    source_rows = db.execute(
+        select(
+            AssetObservation.source_module,
+            source_name_key.label("source_name"),
+            func.sum(AssetObservation.observation_count),
+            func.count(func.distinct(AssetObservation.asset_id)),
+            func.avg(AssetObservation.confidence),
+            func.max(AssetObservation.last_observed_at),
+        )
+        .where(AssetObservation.target_id == target_id)
+        .group_by(AssetObservation.source_module, source_name_key)
+    ).all()
+    source_assets = (
+        select(
+            AssetObservation.source_module.label("source_module"),
+            source_name_key.label("source_name"),
+            AssetObservation.asset_id.label("asset_id"),
+        )
+        .where(AssetObservation.target_id == target_id)
+        .distinct()
+        .subquery()
+    )
+    source_count_per_asset = (
+        select(
+            source_assets.c.asset_id,
+            func.count().label("source_count"),
+        )
+        .group_by(source_assets.c.asset_id)
+        .subquery()
+    )
+    exclusive_rows = db.execute(
+        select(
+            source_assets.c.source_module,
+            source_assets.c.source_name,
+            func.count(),
+        )
+        .join(
+            source_count_per_asset,
+            source_count_per_asset.c.asset_id == source_assets.c.asset_id,
+        )
+        .where(source_count_per_asset.c.source_count == 1)
+        .group_by(source_assets.c.source_module, source_assets.c.source_name)
+    ).all()
+    exclusive_by_source = {
+        (source_module, source_name): int(count)
+        for source_module, source_name, count in exclusive_rows
+    }
+    task_module_rows = db.execute(
+        select(
+            ReconTask.module_name,
+            ReconTask.capability,
+            ReconTask.status,
+            func.count(),
+        )
+        .where(ReconTask.target_id == target_id)
+        .group_by(ReconTask.module_name, ReconTask.capability, ReconTask.status)
+    ).all()
     assets_by_kind = {kind: int(count) for kind, count in asset_rows}
     relationships_by_type = {
         relationship_type: int(count) for relationship_type, count in relationship_rows
     }
     tasks_by_status = {task_status: int(count) for task_status, count in task_rows}
     observations_by_module = {source_module: int(count) for source_module, count in module_rows}
+    source_yield = sorted(
+        [
+            SourceYield(
+                source_module=source_module,
+                source_name=source_name or None,
+                observations=int(observation_count or 0),
+                distinct_assets=int(distinct_assets or 0),
+                exclusive_assets=exclusive_by_source.get((source_module, source_name), 0),
+                average_confidence=float(average_confidence or 0),
+                last_observed_at=last_observed_at,
+            )
+            for (
+                source_module,
+                source_name,
+                observation_count,
+                distinct_assets,
+                average_confidence,
+                last_observed_at,
+            ) in source_rows
+        ],
+        key=lambda item: (-item.distinct_assets, item.source_module, item.source_name or ""),
+    )
+    module_statuses: dict[tuple[str, str], dict[str, int]] = {}
+    for module_name, capability, task_status, count in task_module_rows:
+        module_statuses.setdefault((module_name, capability), {})[task_status] = int(count)
+    module_health = []
+    for (module_name, capability), statuses in module_statuses.items():
+        tasks_total = sum(statuses.values())
+        completed_attempts = statuses.get("completed", 0) + statuses.get("failed", 0)
+        module_health.append(
+            ModuleHealth(
+                module_name=module_name,
+                capability=capability,
+                tasks_total=tasks_total,
+                tasks_by_status=statuses,
+                failure_rate=(
+                    statuses.get("failed", 0) / completed_attempts if completed_attempts else 0
+                ),
+            )
+        )
+    module_health.sort(key=lambda item: (-item.tasks_total, item.module_name))
     return ScanKnowledgeSummary(
         assets_total=sum(assets_by_kind.values()),
         relationships_total=sum(relationships_by_type.values()),
@@ -232,6 +333,8 @@ def scan_knowledge_summary(
         relationships_by_type=relationships_by_type,
         tasks_by_status=tasks_by_status,
         observations_by_module=observations_by_module,
+        source_yield=source_yield,
+        module_health=module_health,
     )
 
 

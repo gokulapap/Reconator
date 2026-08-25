@@ -259,6 +259,28 @@ export interface ScanKnowledgeSummary {
   relationships_by_type: Record<string, number>;
   tasks_by_status: Record<string, number>;
   observations_by_module: Record<string, number>;
+  /** Additive in newer API versions; optional keeps rolling upgrades safe. */
+  source_yield?: SourceYield[];
+  /** Additive in newer API versions; optional keeps rolling upgrades safe. */
+  module_health?: ModuleHealth[];
+}
+
+export interface SourceYield {
+  source_module: string;
+  source_name: string | null;
+  observations: number;
+  distinct_assets: number;
+  exclusive_assets: number;
+  average_confidence: number;
+  last_observed_at: string | null;
+}
+
+export interface ModuleHealth {
+  module_name: string;
+  capability: string;
+  tasks_total: number;
+  tasks_by_status: Record<string, number>;
+  failure_rate: number;
 }
 
 export interface ReconTask {

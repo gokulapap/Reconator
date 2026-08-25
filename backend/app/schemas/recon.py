@@ -173,6 +173,24 @@ class KnowledgeStats(BaseModel):
     assets_by_kind: dict[str, int]
 
 
+class SourceYield(BaseModel):
+    source_module: str
+    source_name: str | None
+    observations: int
+    distinct_assets: int
+    exclusive_assets: int
+    average_confidence: float
+    last_observed_at: datetime
+
+
+class ModuleHealth(BaseModel):
+    module_name: str
+    capability: str
+    tasks_total: int
+    tasks_by_status: dict[str, int]
+    failure_rate: float
+
+
 class ScanKnowledgeSummary(BaseModel):
     assets_total: int
     relationships_total: int
@@ -182,3 +200,5 @@ class ScanKnowledgeSummary(BaseModel):
     relationships_by_type: dict[str, int]
     tasks_by_status: dict[str, int]
     observations_by_module: dict[str, int]
+    source_yield: list[SourceYield] = Field(default_factory=list)
+    module_health: list[ModuleHealth] = Field(default_factory=list)

@@ -74,6 +74,12 @@ def build_parser() -> argparse.ArgumentParser:
     events = commands.add_parser("events", help="show a scan's execution timeline")
     events.add_argument("scan_id", type=int)
 
+    summary = commands.add_parser(
+        "summary",
+        help="show asset counts, source yield, and module health for a scan",
+    )
+    summary.add_argument("scan_id", type=int)
+
     commands.add_parser("modules", help="list registered recon modules")
     return parser
 
@@ -132,6 +138,8 @@ def main(argv: list[str] | None = None) -> int:
             data = client.request("GET", f"/targets/{args.scan_id}/assets", params=params)
         elif args.command == "events":
             data = client.request("GET", f"/targets/{args.scan_id}/events?limit=1000")
+        elif args.command == "summary":
+            data = client.request("GET", f"/targets/{args.scan_id}/knowledge-summary")
         else:
             data = client.request("GET", "/modules")
     except (httpx.HTTPError, RuntimeError) as exc:
