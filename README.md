@@ -4,8 +4,6 @@ Reconator helps you find and track the public parts of a web target during an ap
 
 Reconator runs each check as a separate task. A new result can start more useful tasks. Results are cleaned, joined, saved, and reused instead of being left as separate tool output files.
 
-> **Use Reconator only on targets you own or have clear permission to test.** You must confirm permission when you create a scan. Reconator checks the allowed target list before it runs a task. You are still responsible for setting the correct allowed target list and safe scan limits.
-
 ## What works today
 
 Reconator can:
