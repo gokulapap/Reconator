@@ -23,6 +23,12 @@ def test_scope_is_default_deny_and_applies_domain_rule_to_urls():
     assert not policy.decide("ip_address", "93.184.216.34").allowed
 
 
+def test_recursive_scope_rejects_public_suffix_but_exact_scope_allows_it():
+    with pytest.raises(ScopeConfigurationError):
+        normalize_rule_pattern("subdomain", "github.io")
+    assert normalize_rule_pattern("exact", "github.io") == "github.io"
+
+
 def test_exclusion_always_wins_over_inclusion():
     policy = ScopePolicy(
         [

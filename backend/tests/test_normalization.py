@@ -1,11 +1,29 @@
 import pytest
 
-from app.recon.normalization import NormalizationError, normalize_asset
+from app.recon.normalization import (
+    NormalizationError,
+    is_public_suffix,
+    normalize_asset,
+    validate_scope_root_domain,
+)
 
 
 def test_domain_and_idna_normalization():
     assert normalize_asset("domain", "ExAmPlE.COM.").canonical_value == "example.com"
     assert normalize_asset("domain", "bücher.example").canonical_value == "xn--bcher-kva.example"
+
+
+def test_public_and_private_suffixes_cannot_be_recursive_scope_roots():
+    assert is_public_suffix("co.uk")
+    assert is_public_suffix("github.io")
+    assert not is_public_suffix("example.co.uk")
+    assert not is_public_suffix("team.github.io")
+    assert not is_public_suffix("authorized.invalid")
+
+    with pytest.raises(NormalizationError):
+        validate_scope_root_domain("co.uk")
+    with pytest.raises(NormalizationError):
+        validate_scope_root_domain("github.io")
 
 
 def test_url_identity_normalizes_defaults_and_query_order():

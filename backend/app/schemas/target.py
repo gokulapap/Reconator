@@ -1,3 +1,4 @@
+import ipaddress
 import json
 import re
 from datetime import datetime
@@ -6,7 +7,11 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from app.db.models import AssetKind, ModuleStatus, TargetStatus
-from app.recon.normalization import NormalizationError, normalize_asset
+from app.recon.normalization import (
+    NormalizationError,
+    normalize_asset,
+    validate_scope_root_domain,
+)
 
 DOMAIN_REGEX = re.compile(r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z0-9-]{1,63})+$")
 TargetValue = Annotated[str, Field(min_length=3, max_length=2048)]
@@ -27,6 +32,14 @@ def _normalise_target(value: str, kind: str) -> str:
         value = _normalise_domain(value)
     try:
         normalized = normalize_asset(kind, value)
+        if kind == AssetKind.domain.value:
+            validate_scope_root_domain(normalized.canonical_value)
+        elif kind == AssetKind.url.value:
+            host = normalized.attributes["host"]
+            try:
+                ipaddress.ip_address(host)
+            except ValueError:
+                validate_scope_root_domain(host)
     except NormalizationError as exc:
         raise ValueError(str(exc)) from exc
     if kind == AssetKind.url.value and normalized.attributes.get("scheme") not in {

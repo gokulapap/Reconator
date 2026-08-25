@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from app.db.models import AssetKind, ScopeAction, ScopeRule, ScopeRuleType
-from app.recon.normalization import NormalizationError, normalize_asset, normalize_domain
+from app.recon.normalization import (
+    NormalizationError,
+    normalize_asset,
+    normalize_domain,
+    validate_scope_root_domain,
+)
 
 
 class ScopeConfigurationError(ValueError):
@@ -71,7 +76,10 @@ def normalize_rule_pattern(rule_type: str, pattern: str) -> str:
     rule_type = ScopeRuleType(rule_type).value
     if rule_type in {ScopeRuleType.exact.value, ScopeRuleType.subdomain.value}:
         try:
-            return normalize_domain(pattern)
+            normalized = normalize_domain(pattern)
+            if rule_type == ScopeRuleType.subdomain.value:
+                validate_scope_root_domain(normalized)
+            return normalized
         except NormalizationError:
             if rule_type == ScopeRuleType.exact.value:
                 try:
@@ -182,6 +190,10 @@ def create_root_scope_rules(
         "priority": 100,
     }
     if normalized.kind == AssetKind.domain.value:
+        try:
+            validate_scope_root_domain(normalized.canonical_value)
+        except NormalizationError as exc:
+            raise ScopeConfigurationError(str(exc)) from exc
         return [
             ScopeRule(
                 **base,
@@ -195,6 +207,11 @@ def create_root_scope_rules(
     if normalized.kind == AssetKind.url.value:
         host = normalized.attributes["host"]
         host_kind = AssetKind.ip_address.value if _is_ip_address(host) else AssetKind.domain.value
+        if host_kind == AssetKind.domain.value:
+            try:
+                validate_scope_root_domain(host)
+            except NormalizationError as exc:
+                raise ScopeConfigurationError(str(exc)) from exc
         return [
             ScopeRule(
                 **base,

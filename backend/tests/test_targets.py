@@ -27,6 +27,19 @@ def test_invalid_domain(client):
     assert r.status_code == 422
 
 
+def test_public_suffixes_are_rejected_as_scan_roots(client):
+    for target_kind, url in (("domain", "co.uk"), ("url", "https://github.io/")):
+        response = client.post(
+            "/api/v1/targets",
+            json={
+                "target_kind": target_kind,
+                "url": url,
+                "authorization_confirmed": True,
+            },
+        )
+        assert response.status_code == 422, response.text
+
+
 def test_multiple_root_target_kinds_are_normalized(client):
     cases = [
         ("url", "HTTPS://Example.com:443/app/../api#fragment", "https://example.com/api"),

@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
+import tldextract
+
 from app.db.models import AssetKind
 
 _DOMAIN_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -22,6 +24,12 @@ _SUPPORTED_URL_SCHEMES = {"http", "https", "ws", "wss", "ftp"}
 _DEFAULT_PORTS = {"http": 80, "https": 443, "ws": 80, "wss": 443, "ftp": 21}
 _MAX_VALUE_LENGTH = 16_384
 _CUSTOM_KIND = re.compile(r"^[a-z][a-z0-9_.-]{1,47}$")
+_PUBLIC_SUFFIX_EXTRACTOR = tldextract.TLDExtract(
+    cache_dir=None,
+    suffix_list_urls=(),
+    fallback_to_snapshot=True,
+    include_psl_private_domains=True,
+)
 
 
 class NormalizationError(ValueError):
@@ -70,6 +78,25 @@ def normalize_domain(value: str) -> str:
     if any(not _DOMAIN_LABEL.fullmatch(label) for label in ascii_domain.split(".")):
         raise NormalizationError("domain contains an invalid label")
     return ascii_domain
+
+
+def is_public_suffix(value: str) -> bool:
+    """Return whether a domain is itself a registry or private suffix."""
+
+    domain = normalize_domain(value)
+    extracted = _PUBLIC_SUFFIX_EXTRACTOR(domain)
+    return bool(extracted.suffix and not extracted.domain)
+
+
+def validate_scope_root_domain(value: str) -> str:
+    """Reject roots whose recursive scope would cover unrelated tenants."""
+
+    domain = normalize_domain(value)
+    if is_public_suffix(domain):
+        raise NormalizationError(
+            "domain is a public/private suffix and cannot be used as a recursive scope root"
+        )
+    return domain
 
 
 def normalize_url(value: str) -> tuple[str, dict[str, Any]]:
