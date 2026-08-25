@@ -2,6 +2,8 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY scripts/validate-lock-registry.mjs ./scripts/validate-lock-registry.mjs
+RUN node scripts/validate-lock-registry.mjs
 RUN npm ci --no-audit --no-fund
 
 COPY . .
