@@ -18,6 +18,17 @@ def test_asset_task_event_and_scope_apis(client):
     assets = client.get(f"/api/v1/targets/{target_id}/assets").json()
     assert assets["total"] == 1
     assert assets["items"][0]["canonical_value"] == "api-surface.example.com"
+    asset_id = assets["items"][0]["id"]
+
+    intelligence = client.get(f"/api/v1/targets/{target_id}/assets/{asset_id}").json()
+    assert intelligence["asset"]["id"] == asset_id
+    assert intelligence["observations"][0]["source_module"] == "core.seed"
+    assert intelligence["relationships"] == []
+
+    summary = client.get(f"/api/v1/targets/{target_id}/knowledge-summary").json()
+    assert summary["assets_total"] == 1
+    assert summary["assets_by_kind"] == {"domain": 1}
+    assert summary["observations_by_module"] == {"core.seed": 1}
 
     tasks = client.get(f"/api/v1/targets/{target_id}/tasks").json()
     assert tasks["total"] == 1

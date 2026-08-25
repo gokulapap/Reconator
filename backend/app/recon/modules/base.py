@@ -36,12 +36,20 @@ class ModuleManifest:
     accepts_derived_inputs: bool = False
     enabled: bool = True
     implementation: str = "python"
+    depends_on_capabilities: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if not _MODULE_NAME.fullmatch(self.name):
             raise ValueError("module name must be a lowercase namespaced identifier")
         if not _CAPABILITY_NAME.fullmatch(self.capability):
             raise ValueError("module capability must be a lowercase namespaced identifier")
+        if any(
+            not _CAPABILITY_NAME.fullmatch(capability)
+            for capability in self.depends_on_capabilities
+        ):
+            raise ValueError(f"module {self.name} declares an invalid dependency capability")
+        if self.capability in self.depends_on_capabilities:
+            raise ValueError(f"module {self.name} cannot depend on its own capability")
         if not self.version or len(self.version) > 32:
             raise ValueError(f"module {self.name} has an invalid version")
         if not self.description or len(self.description) > 500:

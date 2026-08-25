@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 
 import { Layout } from "@/components/Layout";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -19,6 +19,7 @@ export default function App() {
           <Route path="targets/:id" element={<TargetDetail />} />
           <Route path="modules" element={<Modules />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
       <Toaster />

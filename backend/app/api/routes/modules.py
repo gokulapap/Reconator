@@ -20,6 +20,8 @@ class ModuleInfo(BaseModel):
     default_profiles: list[str]
     cache_ttl_seconds: int
     accepts_derived_inputs: bool
+    depends_on_capabilities: list[str]
+    available: bool
 
 
 @router.get("", response_model=list[ModuleInfo])
@@ -39,6 +41,8 @@ def list_modules() -> list[ModuleInfo]:
             default_profiles=sorted(m.manifest.default_profiles),
             cache_ttl_seconds=m.manifest.cache_ttl_seconds,
             accepts_derived_inputs=m.manifest.accepts_derived_inputs,
+            depends_on_capabilities=sorted(m.manifest.depends_on_capabilities),
+            available=registry.is_available(m),
         )
         for m in registry.all()
     ]

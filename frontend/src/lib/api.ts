@@ -15,12 +15,18 @@ export const apiKeyStore = {
     try {
       if (value) localStorage.setItem(API_KEY_STORAGE, value);
       else localStorage.removeItem(API_KEY_STORAGE);
-    } catch {}
+    } catch {
+      // Ignore unavailable browser storage.
+    }
+    window.dispatchEvent(new Event("reconator-api-key-change"));
   },
   clear() {
     try {
       localStorage.removeItem(API_KEY_STORAGE);
-    } catch {}
+    } catch {
+      // Ignore unavailable browser storage.
+    }
+    window.dispatchEvent(new Event("reconator-api-key-change"));
   },
 };
 
@@ -37,8 +43,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let detail = `HTTP ${res.status}`;
     try {
       const body = await res.json();
-      detail = body.detail ?? detail;
-    } catch {}
+      if (typeof body.detail === "string") {
+        detail = body.detail;
+      } else if (Array.isArray(body.detail)) {
+        detail = body.detail
+          .map((item: unknown) => {
+            if (!item || typeof item !== "object") return String(item);
+            const issue = item as { loc?: unknown[]; msg?: string };
+            const location = issue.loc?.slice(1).join(".");
+            return `${location ? `${location}: ` : ""}${issue.msg ?? "invalid value"}`;
+          })
+          .join("; ");
+      }
+    } catch {
+      // Preserve the status fallback for a non-JSON error response.
+    }
     throw new Error(detail);
   }
   if (res.status === 204) return undefined as T;
@@ -54,7 +73,9 @@ async function download(path: string, fallbackName: string): Promise<void> {
     let detail = `HTTP ${res.status}`;
     try {
       detail = (await res.json()).detail ?? detail;
-    } catch {}
+    } catch {
+      // Preserve the status fallback for a non-JSON error response.
+    }
     throw new Error(detail);
   }
   const disposition = res.headers.get("Content-Disposition") ?? "";
@@ -84,7 +105,15 @@ export type ModuleStatus =
   | "failed"
   | "skipped";
 
-export type ReconTaskStatus = ModuleStatus | "retry_wait" | "blocked" | "cancelled";
+export type ReconTaskStatus =
+  | "queued"
+  | "running"
+  | "retry_wait"
+  | "blocked"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "cancelled";
 
 export interface Target {
   id: number;
@@ -151,6 +180,8 @@ export interface ModuleInfo {
   default_profiles: string[];
   cache_ttl_seconds: number;
   accepts_derived_inputs: boolean;
+  depends_on_capabilities: string[];
+  available: boolean;
 }
 
 export interface Asset {
@@ -188,6 +219,46 @@ export interface AssetGraph {
   nodes: Asset[];
   edges: AssetRelationship[];
   truncated: boolean;
+}
+
+export interface AssetObservation {
+  id: number;
+  target_id: number;
+  asset_id: number;
+  task_id: number | null;
+  source_module: string;
+  source_name: string | null;
+  confidence: number;
+  evidence: Record<string, unknown>;
+  snapshot: Record<string, unknown>;
+  first_observed_at: string;
+  last_observed_at: string;
+  observation_count: number;
+}
+
+export interface AssetRelationshipContext {
+  relationship: AssetRelationship;
+  direction: "incoming" | "outgoing";
+  related_asset: Asset;
+}
+
+export interface AssetIntelligence {
+  asset: Asset;
+  observations: AssetObservation[];
+  relationships: AssetRelationshipContext[];
+  observations_truncated: boolean;
+  relationships_truncated: boolean;
+}
+
+export interface ScanKnowledgeSummary {
+  assets_total: number;
+  relationships_total: number;
+  observations_total: number;
+  tasks_total: number;
+  assets_by_kind: Record<string, number>;
+  relationships_by_type: Record<string, number>;
+  tasks_by_status: Record<string, number>;
+  observations_by_module: Record<string, number>;
 }
 
 export interface ReconTask {
@@ -299,7 +370,8 @@ export const api = {
     qs.set("page_size", String(params.page_size ?? 25));
     return request<TargetList>(`/targets?${qs.toString()}`);
   },
-  getTarget: (id: number) => request<TargetDetail>(`/targets/${id}`),
+  getTarget: (id: number, signal?: AbortSignal) =>
+    request<TargetDetail>(`/targets/${id}`, { signal }),
   createTarget: (payload: {
     url: string;
     target_kind?: TargetKind;
@@ -347,16 +419,58 @@ export const api = {
     return download(`/targets/export?${qs.toString()}`, `reconator-targets.${format}`);
   },
   modules: () => request<ModuleInfo[]>("/modules"),
-  listAssets: (targetId: number) =>
-    request<AssetList>(`/targets/${targetId}/assets?page_size=500`),
-  getGraph: (targetId: number) =>
-    request<AssetGraph>(`/targets/${targetId}/graph?limit=500`),
-  listTasks: (targetId: number) =>
-    request<TaskList>(`/targets/${targetId}/tasks?page_size=500`),
-  getTask: (targetId: number, taskId: number) =>
-    request<TaskDetail>(`/targets/${targetId}/tasks/${taskId}`),
-  listEvents: (targetId: number) =>
-    request<ReconEvent[]>(`/targets/${targetId}/events?limit=500`),
+  listAssets: (
+    targetId: number,
+    params: {
+      kind?: string;
+      search?: string;
+      min_priority?: number;
+      page?: number;
+      page_size?: number;
+      signal?: AbortSignal;
+    } = {},
+  ) => {
+    const qs = new URLSearchParams({ page_size: String(params.page_size ?? 500) });
+    if (params.kind) qs.set("kind", params.kind);
+    if (params.search) qs.set("search", params.search);
+    if (params.min_priority !== undefined)
+      qs.set("min_priority", String(params.min_priority));
+    qs.set("page", String(params.page ?? 1));
+    return request<AssetList>(`/targets/${targetId}/assets?${qs.toString()}`, {
+      signal: params.signal,
+    });
+  },
+  getAssetIntelligence: (targetId: number, assetId: number, signal?: AbortSignal) =>
+    request<AssetIntelligence>(`/targets/${targetId}/assets/${assetId}`, { signal }),
+  scanKnowledgeSummary: (targetId: number, signal?: AbortSignal) =>
+    request<ScanKnowledgeSummary>(`/targets/${targetId}/knowledge-summary`, { signal }),
+  getGraph: (targetId: number, limit = 500, signal?: AbortSignal) =>
+    request<AssetGraph>(`/targets/${targetId}/graph?limit=${limit}`, { signal }),
+  listTasks: (
+    targetId: number,
+    params: {
+      status?: ReconTaskStatus;
+      module?: string;
+      page?: number;
+      page_size?: number;
+      signal?: AbortSignal;
+    } = {},
+  ) => {
+    const qs = new URLSearchParams({ page_size: String(params.page_size ?? 500) });
+    if (params.status) qs.set("status", params.status);
+    if (params.module) qs.set("module", params.module);
+    qs.set("page", String(params.page ?? 1));
+    return request<TaskList>(`/targets/${targetId}/tasks?${qs.toString()}`, {
+      signal: params.signal,
+    });
+  },
+  getTask: (targetId: number, taskId: number, signal?: AbortSignal) =>
+    request<TaskDetail>(`/targets/${targetId}/tasks/${taskId}`, { signal }),
+  listEvents: (targetId: number, afterId = 0, signal?: AbortSignal) =>
+    request<ReconEvent[]>(
+      `/targets/${targetId}/events?limit=500&after_id=${afterId}`,
+      { signal },
+    ),
   listScope: (targetId: number) =>
     request<ScopeRule[]>(`/targets/${targetId}/scope`),
   addScope: (

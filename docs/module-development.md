@@ -108,6 +108,17 @@ CommandSpec(
 
 Parsers must treat tool output as untrusted. Limit records, lengths, nesting, and response size before creating emissions. Never trust an output path supplied by a tool.
 
+For maintained external recon binaries, prefer the isolated toolbox pattern used by the
+bundled adapters. Add the implementation to the toolbox allowlist with a pinned version,
+typed target validator, explicit bounded options, non-shell argv, deadline, output limit,
+license notice, and parser fixtures. The worker-facing module should expose a capability
+contract and normalize results; it must not expose arbitrary command or flag passthrough.
+
+Classify the real interaction mode, not the apparent operation. A locally installed
+binary that queries a passive provider is passive; a crawler or HTTP probe is active; a
+pure mutation/range classifier is local. Any tool that contacts the target must require
+direct scope even if it calls itself passive.
+
 ## Relationship vocabulary
 
 Relationship types use lower snake case, are directional, and should describe a durable fact: `resolves_to`, `has_subdomain`, `serves`, `links_to`, `loads_script`, `exposes_endpoint`, `accepts_parameter`, `exposes_service`, `contains_address`, or `owns_address`.

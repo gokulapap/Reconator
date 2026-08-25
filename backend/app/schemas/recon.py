@@ -29,6 +29,23 @@ class AssetList(BaseModel):
     page_size: int
 
 
+class AssetObservationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    target_id: int
+    asset_id: int
+    task_id: int | None
+    source_module: str
+    source_name: str | None
+    confidence: float
+    evidence: dict[str, Any]
+    snapshot: dict[str, Any]
+    first_observed_at: datetime
+    last_observed_at: datetime
+    observation_count: int
+
+
 class RelationshipRead(BaseModel):
     id: int
     source_asset_id: int
@@ -38,6 +55,20 @@ class RelationshipRead(BaseModel):
     confidence: float
     first_seen_at: datetime
     last_seen_at: datetime
+
+
+class AssetRelationshipContext(BaseModel):
+    relationship: RelationshipRead
+    direction: Literal["incoming", "outgoing"]
+    related_asset: AssetRead
+
+
+class AssetIntelligence(BaseModel):
+    asset: AssetRead
+    observations: list[AssetObservationRead]
+    relationships: list[AssetRelationshipContext]
+    observations_truncated: bool = False
+    relationships_truncated: bool = False
 
 
 class GraphResponse(BaseModel):
@@ -140,3 +171,14 @@ class KnowledgeStats(BaseModel):
     observations_total: int
     tasks_by_status: dict[str, int]
     assets_by_kind: dict[str, int]
+
+
+class ScanKnowledgeSummary(BaseModel):
+    assets_total: int
+    relationships_total: int
+    observations_total: int
+    tasks_total: int
+    assets_by_kind: dict[str, int]
+    relationships_by_type: dict[str, int]
+    tasks_by_status: dict[str, int]
+    observations_by_module: dict[str, int]

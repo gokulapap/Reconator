@@ -13,6 +13,11 @@ from app.db.models import AssetKind
 
 _DOMAIN_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
+_SENSITIVE_QUERY_PARAMETER = re.compile(
+    r"(?:^|[_-])(?:access[_-]?key|api[_-]?key|apikey|auth|authorization|code|"
+    r"credential|jwt|password|secret|session|signature|sig|token)(?:$|[_-])",
+    re.IGNORECASE,
+)
 _SUPPORTED_URL_SCHEMES = {"http", "https", "ws", "wss", "ftp"}
 _DEFAULT_PORTS = {"http": 80, "https": 443, "ws": 80, "wss": 443, "ftp": 21}
 _MAX_VALUE_LENGTH = 16_384
@@ -106,7 +111,14 @@ def normalize_url(value: str) -> tuple[str, dict[str, Any]]:
     normalized_path = quote(normalized_path, safe="/%:@!$&'()*+,;=-._~")
 
     query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
-    canonical_query = urlencode(sorted(query_pairs), doseq=True, safe="/:@")
+    redacted_names = sorted(
+        {name for name, _ in query_pairs if _SENSITIVE_QUERY_PARAMETER.search(name)}
+    )
+    safe_query_pairs = [
+        (name, "[REDACTED]" if name in redacted_names else query_value)
+        for name, query_value in query_pairs
+    ]
+    canonical_query = urlencode(sorted(safe_query_pairs), doseq=True, safe="/:@")
     canonical = urlunsplit((scheme, netloc, normalized_path, canonical_query, ""))
     return canonical, {
         "scheme": scheme,
@@ -114,6 +126,7 @@ def normalize_url(value: str) -> tuple[str, dict[str, Any]]:
         "port": port or _DEFAULT_PORTS.get(scheme),
         "path": normalized_path,
         "query_parameters": sorted({name for name, _ in query_pairs}),
+        "redacted_query_parameters": redacted_names,
     }
 
 
@@ -184,6 +197,10 @@ def normalize_asset(
         if not separator:
             method, endpoint_url = "GET", original
         canonical_url, derived = normalize_url(endpoint_url)
+        # Endpoint identity is method + origin + path. Query parameter names
+        # remain structured metadata and values remain observation evidence,
+        # preventing token/value churn from creating duplicate endpoints.
+        canonical_url = urlsplit(canonical_url)._replace(query="", fragment="").geturl()
         method = method.upper()
         if not re.fullmatch(r"[A-Z]{3,16}", method):
             raise NormalizationError("endpoint HTTP method is invalid")
@@ -202,9 +219,23 @@ def normalize_asset(
         canonical = " ".join(original.split()).lower()
 
     merged_attributes = {**derived, **(attributes or {})}
+    stored_value = (
+        canonical
+        if kind_value == AssetKind.endpoint.value
+        or (
+            kind_value
+            in {
+                AssetKind.url.value,
+                AssetKind.repository.value,
+                AssetKind.javascript.value,
+            }
+            and derived.get("redacted_query_parameters")
+        )
+        else original
+    )
     return NormalizedAsset(
         kind=kind_value,
-        value=original,
+        value=stored_value,
         canonical_value=canonical,
         identity_hash=stable_digest(kind_value, canonical),
         attributes=merged_attributes,

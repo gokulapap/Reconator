@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, KeyRound, Send } from "lucide-react";
 
 import { api, apiKeyStore } from "@/lib/api";
@@ -18,11 +18,8 @@ import { useToast } from "@/hooks/use-toast";
 
 export function Settings() {
   const { toast } = useToast();
-  const [apiKey, setApiKey] = useState<string>("");
-
-  useEffect(() => {
-    setApiKey(apiKeyStore.get() ?? "");
-  }, []);
+  const queryClient = useQueryClient();
+  const [apiKey, setApiKey] = useState<string>(() => apiKeyStore.get() ?? "");
 
   const info = useQuery({ queryKey: ["system-info"], queryFn: api.systemInfo });
 
@@ -41,6 +38,7 @@ export function Settings() {
 
   const saveKey = () => {
     apiKeyStore.set(apiKey.trim());
+    void queryClient.invalidateQueries();
     toast({ title: apiKey.trim() ? "API key saved" : "API key cleared" });
   };
 

@@ -31,6 +31,17 @@ class ModuleRegistry:
         with self._lock:
             return sorted(self._modules.values(), key=lambda item: item.manifest.name)
 
+    @staticmethod
+    def is_available(module: ReconModule) -> bool:
+        availability = getattr(module, "available", None)
+        if availability is None:
+            return True
+        try:
+            return bool(availability())
+        except Exception:
+            log.exception("module availability check failed module=%s", module.manifest.name)
+            return False
+
     def consumers_for(
         self,
         asset_kind: str,
@@ -42,6 +53,8 @@ class ModuleRegistry:
         for module in self.all():
             manifest = module.manifest
             if not manifest.enabled or asset_kind not in manifest.consumes:
+                continue
+            if not self.is_available(module):
                 continue
             if selected_modules is not None and not {
                 manifest.name,

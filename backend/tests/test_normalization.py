@@ -35,6 +35,22 @@ def test_network_endpoint_and_extensible_kinds():
     assert normalize_asset("mobile.application", "  Example App  ").canonical_value == "example app"
 
 
+def test_endpoint_identity_uses_parameter_names_not_sensitive_values():
+    first = normalize_asset("endpoint", "GET https://api.example.com/users?id=1&token=secret-one")
+    second = normalize_asset("endpoint", "GET https://api.example.com/users?token=secret-two&id=2")
+    assert first.canonical_value == "GET https://api.example.com/users"
+    assert first.identity_hash == second.identity_hash
+    assert first.attributes["query_parameters"] == ["id", "token"]
+
+
+def test_sensitive_url_query_values_are_redacted_from_identity_and_storage():
+    normalized = normalize_asset("url", "https://example.com/reset?token=super-secret&id=7")
+    assert "super-secret" not in normalized.value
+    assert "super-secret" not in normalized.canonical_value
+    assert normalized.attributes["redacted_query_parameters"] == ["token"]
+    assert "%5BREDACTED%5D" in normalized.canonical_value
+
+
 @pytest.mark.parametrize(
     ("kind", "value"),
     [

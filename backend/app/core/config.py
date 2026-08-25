@@ -61,11 +61,18 @@ class Settings(BaseSettings):
     max_relationship_emissions_per_task: int = Field(default=20_000, ge=1, le=250_000)
     max_emission_metadata_bytes: int = Field(default=65_536, ge=1_024, le=1_000_000)
     max_raw_output_bytes: int = Field(default=2_000_000, ge=0, le=100_000_000)
+    max_raw_output_bytes_per_scan: int = Field(default=50_000_000, ge=0, le=10_000_000_000)
     max_request_body_bytes: int = Field(default=1_000_000, ge=1_024, le=100_000_000)
     allow_private_targets: bool = False
     require_authorization_confirmation: bool = True
     modules_dir: str = "/app/modules"
     results_dir: str = "/app/results"
+
+    # Isolated third-party tool execution plane. Keep unset for a pure-Python
+    # deployment; Docker Compose provisions and authenticates it by default.
+    toolbox_enabled: bool = False
+    toolbox_url: str | None = None
+    toolbox_shared_secret: str | None = None
 
     # Static frontend
     serve_static_web: bool = False

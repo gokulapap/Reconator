@@ -4,12 +4,13 @@ Reconator favors bounded, measurable behavior over uncontrolled concurrency.
 
 ## Local baseline
 
-The deterministic benchmark in `backend/benchmarks/benchmark_core.py` measures the two hot paths that do not require external tools or network conditions. On the development machine on 2026-08-24:
+The deterministic benchmark in `backend/benchmarks/benchmark_core.py` measures hot paths that do not require external tools or network conditions. On the development machine on 2026-08-25:
 
 | Path | Work | Result |
 |---|---:|---:|
-| URL normalization/dedup identity | 100,000 inputs | 9.314 s, ~10,736/s, 0.24 MiB measured peak |
-| SQLite observation persistence | 10,000 observations / 5,000 unique | 5.342 s, ~1,872 observations/s |
+| URL normalization/dedup identity | 100,000 inputs | 10.098 s, ~9,903/s, 0.24 MiB measured peak |
+| SQLite observation persistence | 10,000 observations / 5,000 unique | 5.809 s, ~1,721 observations/s |
+| Bounded toolbox JSONL decoding | 20,000 records | 0.062 s, ~321,128/s, 12.62 MiB measured peak |
 
 These are development baselines, not production SLOs. PostgreSQL latency, index cache, evidence size, module mix, network rates, and container CPU limits materially change throughput.
 
@@ -34,6 +35,8 @@ cd backend
 - module record/body caps: bound parsing and persistence volume.
 - `MAX_RAW_OUTPUT_BYTES`: retained raw evidence cap.
 - container CPU/memory limits: deployment-level final boundary.
+- `TOOLBOX_MAX_CONCURRENT`, container PID limit, process-group deadlines, temporary
+  workspaces, and fixed stdout/stderr retention: isolate third-party executable pressure.
 
 Task priority combines module priority and extensible asset-interest scoring. New/auth/API/admin/staging/change signals can therefore move useful work ahead of low-value expansion without hard-coding decisions in every module.
 

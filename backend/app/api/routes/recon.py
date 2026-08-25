@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import Text, cast, func, select
+from sqlalchemy import Text, cast, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -21,13 +21,17 @@ from app.db.models import (
 from app.recon.orchestration import TaskScheduler
 from app.recon.scope import ScopeConfigurationError, normalize_rule_pattern
 from app.schemas.recon import (
+    AssetIntelligence,
     AssetList,
+    AssetObservationRead,
     AssetRead,
+    AssetRelationshipContext,
     EventRead,
     GraphResponse,
     KnowledgeStats,
     RelationshipRead,
     ScanComparison,
+    ScanKnowledgeSummary,
     ScopeRuleCreate,
     ScopeRuleRead,
     TaskDetail,
@@ -85,6 +89,152 @@ def list_scan_assets(
     )
 
 
+def _relationship_read(relationship: AssetRelationship) -> RelationshipRead:
+    return RelationshipRead(
+        id=relationship.id,
+        source_asset_id=relationship.source_asset_id,
+        target_asset_id=relationship.target_asset_id,
+        relationship_type=relationship.relationship_type,
+        attributes=relationship.attributes or {},
+        confidence=relationship.confidence,
+        first_seen_at=relationship.first_seen_at,
+        last_seen_at=relationship.last_seen_at,
+    )
+
+
+@router.get(
+    "/targets/{target_id}/assets/{asset_id}",
+    response_model=AssetIntelligence,
+)
+def get_scan_asset_intelligence(
+    target_id: int,
+    asset_id: int,
+    db: Session = Depends(db_session),
+    observation_limit: int = Query(200, ge=1, le=500),
+    relationship_limit: int = Query(200, ge=1, le=500),
+) -> AssetIntelligence:
+    _target_or_404(db, target_id)
+    asset = db.scalar(
+        select(Asset).where(
+            Asset.id == asset_id,
+            Asset.id.in_(_scan_asset_ids(target_id)),
+        )
+    )
+    if asset is None:
+        raise HTTPException(status_code=404, detail="asset not observed in this scan")
+
+    observations = list(
+        db.scalars(
+            select(AssetObservation)
+            .where(
+                AssetObservation.target_id == target_id,
+                AssetObservation.asset_id == asset_id,
+            )
+            .order_by(
+                AssetObservation.last_observed_at.desc(),
+                AssetObservation.id.desc(),
+            )
+            .limit(observation_limit + 1)
+        )
+    )
+    observations_truncated = len(observations) > observation_limit
+    observations = observations[:observation_limit]
+
+    observed_relationship_ids = (
+        select(RelationshipObservation.relationship_id)
+        .where(RelationshipObservation.target_id == target_id)
+        .distinct()
+    )
+    relationships = list(
+        db.scalars(
+            select(AssetRelationship)
+            .where(
+                AssetRelationship.id.in_(observed_relationship_ids),
+                or_(
+                    AssetRelationship.source_asset_id == asset_id,
+                    AssetRelationship.target_asset_id == asset_id,
+                ),
+            )
+            .order_by(AssetRelationship.last_seen_at.desc(), AssetRelationship.id)
+            .limit(relationship_limit + 1)
+        )
+    )
+    relationships_truncated = len(relationships) > relationship_limit
+    relationships = relationships[:relationship_limit]
+    contexts: list[AssetRelationshipContext] = []
+    for relationship in relationships:
+        outgoing = relationship.source_asset_id == asset_id
+        related = relationship.target_asset if outgoing else relationship.source_asset
+        contexts.append(
+            AssetRelationshipContext(
+                relationship=_relationship_read(relationship),
+                direction="outgoing" if outgoing else "incoming",
+                related_asset=AssetRead.model_validate(related),
+            )
+        )
+    return AssetIntelligence(
+        asset=AssetRead.model_validate(asset),
+        observations=[AssetObservationRead.model_validate(item) for item in observations],
+        relationships=contexts,
+        observations_truncated=observations_truncated,
+        relationships_truncated=relationships_truncated,
+    )
+
+
+@router.get(
+    "/targets/{target_id}/knowledge-summary",
+    response_model=ScanKnowledgeSummary,
+)
+def scan_knowledge_summary(
+    target_id: int, db: Session = Depends(db_session)
+) -> ScanKnowledgeSummary:
+    _target_or_404(db, target_id)
+    asset_rows = db.execute(
+        select(Asset.kind, func.count(func.distinct(Asset.id)))
+        .join(AssetObservation, AssetObservation.asset_id == Asset.id)
+        .where(AssetObservation.target_id == target_id)
+        .group_by(Asset.kind)
+    ).all()
+    relationship_rows = db.execute(
+        select(
+            AssetRelationship.relationship_type,
+            func.count(func.distinct(AssetRelationship.id)),
+        )
+        .join(
+            RelationshipObservation,
+            RelationshipObservation.relationship_id == AssetRelationship.id,
+        )
+        .where(RelationshipObservation.target_id == target_id)
+        .group_by(AssetRelationship.relationship_type)
+    ).all()
+    task_rows = db.execute(
+        select(ReconTask.status, func.count())
+        .where(ReconTask.target_id == target_id)
+        .group_by(ReconTask.status)
+    ).all()
+    module_rows = db.execute(
+        select(AssetObservation.source_module, func.count())
+        .where(AssetObservation.target_id == target_id)
+        .group_by(AssetObservation.source_module)
+    ).all()
+    assets_by_kind = {kind: int(count) for kind, count in asset_rows}
+    relationships_by_type = {
+        relationship_type: int(count) for relationship_type, count in relationship_rows
+    }
+    tasks_by_status = {task_status: int(count) for task_status, count in task_rows}
+    observations_by_module = {source_module: int(count) for source_module, count in module_rows}
+    return ScanKnowledgeSummary(
+        assets_total=sum(assets_by_kind.values()),
+        relationships_total=sum(relationships_by_type.values()),
+        observations_total=sum(observations_by_module.values()),
+        tasks_total=sum(tasks_by_status.values()),
+        assets_by_kind=assets_by_kind,
+        relationships_by_type=relationships_by_type,
+        tasks_by_status=tasks_by_status,
+        observations_by_module=observations_by_module,
+    )
+
+
 @router.get("/targets/{target_id}/graph", response_model=GraphResponse)
 def get_scan_graph(
     target_id: int,
@@ -126,19 +276,7 @@ def get_scan_graph(
             edges = edges[:edge_limit]
     return GraphResponse(
         nodes=[AssetRead.model_validate(item) for item in nodes],
-        edges=[
-            RelationshipRead(
-                id=edge.id,
-                source_asset_id=edge.source_asset_id,
-                target_asset_id=edge.target_asset_id,
-                relationship_type=edge.relationship_type,
-                attributes=edge.attributes or {},
-                confidence=edge.confidence,
-                first_seen_at=edge.first_seen_at,
-                last_seen_at=edge.last_seen_at,
-            )
-            for edge in edges
-        ],
+        edges=[_relationship_read(edge) for edge in edges],
         truncated=truncated,
     )
 

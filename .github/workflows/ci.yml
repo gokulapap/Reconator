@@ -38,8 +38,8 @@ jobs:
           pip install -r requirements-dev.txt
       - name: Ruff
         run: |
-          ruff check .
-          ruff format --check .
+          ruff check . ../toolbox
+          ruff format --check . ../toolbox
       - name: Tests
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
@@ -54,7 +54,7 @@ jobs:
         run: pip-audit -r requirements-dev.txt
 
   frontend:
-    name: Frontend (type-check + build)
+    name: Frontend (lint + tests + type-check + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -70,6 +70,10 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Dependency audit
         run: npm audit --audit-level=high
+      - name: Lint
+        run: npm run lint
+      - name: Tests
+        run: npm test
       - name: Build
         run: npm run build
 
@@ -77,41 +81,28 @@ jobs:
     name: Docker Compose (build + smoke)
     runs-on: ubuntu-latest
     needs: [backend, frontend]
+    env:
+      POSTGRES_PASSWORD: ci-only
+      ADMIN_API_KEY: ci-only
+      TOOLBOX_SHARED_SECRET: ci-only-independent-toolbox-secret
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - name: Validate Compose
-        env:
-          POSTGRES_PASSWORD: ci-only
-          ADMIN_API_KEY: ci-only
         run: docker compose config --quiet
       - name: Build service images
-        env:
-          POSTGRES_PASSWORD: ci-only
-          ADMIN_API_KEY: ci-only
-        run: docker compose build api web
+        run: docker compose build api web toolbox
       - name: Start production topology
-        env:
-          POSTGRES_PASSWORD: ci-only
-          ADMIN_API_KEY: ci-only
-        run: docker compose up -d db migrate api worker web
+        run: docker compose up -d db migrate api toolbox worker web
       - name: Smoke API and web proxy
-        env:
-          POSTGRES_PASSWORD: ci-only
-          ADMIN_API_KEY: ci-only
         run: |
           curl --fail --retry 20 --retry-delay 2 http://127.0.0.1:8000/api/v1/ready
           curl --fail --retry 20 --retry-delay 2 http://127.0.0.1:3000/api/v1/ready
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8000/api/v1/targets)" = "401"
+          test "$(docker compose exec -T worker python -c 'from app.recon.modules.builtin import register_builtin_modules; from app.recon.modules.registry import registry; register_builtin_modules(); print(sum(registry.is_available(m) for m in registry.all()))')" -ge "22"
       - name: Container logs
         if: always()
-        env:
-          POSTGRES_PASSWORD: ci-only
-          ADMIN_API_KEY: ci-only
         run: docker compose logs --no-color
       - name: Stop topology
         if: always()
-        env:
-          POSTGRES_PASSWORD: ci-only
-          ADMIN_API_KEY: ci-only
         run: docker compose down --volumes

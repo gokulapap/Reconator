@@ -17,7 +17,7 @@ API / CLI / UI / automation
  PostgreSQL priority task queue ◄── retries / leases / dependencies
             │
             ▼
- bounded worker pools ── module isolation
+ bounded worker pools ── module isolation ── authenticated tool plane
             │
             ▼
  parser → normalizer → validator → deduplicator → prioritizer
@@ -29,6 +29,11 @@ API / CLI / UI / automation
 ```
 
 The API process never launches tools. Worker processes can scale independently, and every interface uses the same database-backed engine.
+
+The web application is an operational projection of that engine rather than a second
+source of truth. It uses the same paginated APIs to expose per-scan distributions,
+interactive graph exploration, asset-level evidence/provenance, task ancestry and raw
+bounded output, change sets, events, and centrally reconciled scope policy.
 
 ## Knowledge model
 
@@ -70,12 +75,15 @@ Database uniqueness constraints remain the final concurrency-safe deduplication 
 6. A worker claims work by priority with `FOR UPDATE SKIP LOCKED`, records a lease owner/expiry, and enforces per-target concurrency.
 7. Scope and authorization are checked again immediately before execution.
 8. Valid outputs are persisted; malformed individual emissions are rejected and recorded without losing valid siblings.
-9. New-to-scan assets return to step 3. Existing assets update provenance/history but do not create duplicate work.
+9. New-to-scan or materially changed assets return to step 3. Stable idempotency keys prevent duplicate work on the same entity/configuration.
 10. When no unfinished task remains, the scan becomes completed, partially failed, failed, or cancelled and records its final counts/change summary.
 
 Retries use exponential backoff and structured error codes. Expired leases become retryable work or final failures, allowing another worker to resume after a crash. Cancellation stops new claims; a module already running finishes within its timeout, refreshes cancellation state, and discards its output when cancellation was requested.
 
-Dependencies are represented by `task_dependencies`. A task remains blocked until every predecessor succeeds or is skipped; a failed required predecessor suppresses the dependent task.
+Dependencies are declared by capability in module manifests and materialized in
+`task_dependencies` for the same input entity. A task remains blocked until every
+predecessor succeeds or is skipped; a failed or unavailable required predecessor
+suppresses the dependent task.
 
 ## Scope semantics
 
@@ -100,7 +108,11 @@ A manifest declares:
 - whether derived input is acceptable;
 - implementation identity.
 
-Users may select a concrete module or a capability. Multiple implementations may therefore coexist, be compared, replace one another, or be selected as fallbacks without changing the scheduler.
+Users may select a concrete module or a capability. Multiple implementations may
+therefore coexist, be compared, or replace one another without changing the scheduler.
+Current capability selection runs matching implementations as complementary sources;
+ordered preferred/fallback policy is intentionally listed as remaining work rather
+than being simulated with hidden tool-specific behavior.
 
 Python package entry points under `reconator.modules` are discovered at worker startup. A broken plugin is logged and isolated from other registrations.
 
@@ -123,9 +135,29 @@ Rescans link to a parent scan. Cacheable module results are replayed only within
 - One failed plugin does not block registry startup.
 - One failed task does not stop independent branches.
 - API and UI failure do not stop workers already operating from PostgreSQL.
+- A toolbox crash or saturated execution slot fails/retries only the requesting task.
+
+## Isolated tool execution plane
+
+Maintained third-party implementations run in a separate `toolbox` service instead of
+inside the worker. The worker sends one typed request over an authenticated internal
+HTTP interface. The service accepts only an enumerated tool name, a normalized target,
+and bounded configuration fields; callers cannot submit commands, arbitrary flags, file
+paths, or environment variables.
+
+Each execution uses an argv array, minimal environment, temporary working directory,
+closed stdin, bounded stdout/stderr, process-group deadline, and global semaphore. The
+container is non-root and read-only with dropped capabilities, a small tmpfs, PID/CPU/
+memory limits, and no database-network attachment. It has only the egress network needed
+by recon implementations. Version-pinned capability adapters normalize results back into
+the same graph and provenance model as native modules.
+
+This boundary contains ordinary tool defects and hostile parser input; it is not a
+security boundary against a deliberately malicious upstream binary. Every added binary
+still requires version, license, supply-chain, parser, and resource review.
 
 ## Deployment topology
 
-`docker-compose.yaml` defines PostgreSQL on an internal network, a one-shot migration gate, API, replicated workers, and Nginx UI. Only API/UI loopback ports are published by default. Runtime containers are non-root, read-only, capability-free, `no-new-privileges`, bounded by memory/CPU reservations, and use named volumes only where writes are required.
+`docker-compose.yaml` defines PostgreSQL on an internal network, a one-shot migration gate, API, replicated workers, an isolated reconnaissance toolbox, and Nginx UI. Only API/UI loopback ports are published by default. Runtime containers are non-root, read-only, capability-free, `no-new-privileges`, bounded by memory/CPU reservations, and use named volumes only where writes are required. The toolbox is attached only to the egress network; PostgreSQL and migration services never are. Workers bridge the private control plane to the egress plane, while API and UI remain off the recon egress network.
 
 Schema creation is never performed implicitly by API/worker startup; Alembic owns production migrations.

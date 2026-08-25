@@ -1,6 +1,8 @@
 .env
 .env.*
 !.env.example
+config/toolbox/*.yaml
+config/toolbox/*.yml
 
 # Python
 __pycache__/

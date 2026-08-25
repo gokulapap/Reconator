@@ -7,29 +7,36 @@ Reconator 3 establishes the framework substrate and a safe end-to-end discovery 
 - Domain, URL, IP, and CIDR roots.
 - Canonical graph assets and arbitrary typed relationships.
 - Evidence/provenance, global identity, per-scan observations, snapshots, and comparisons.
-- DNS A/AAAA/CNAME/NS/MX/TXT/PTR, CT subdomains, HTTP/HTML links/scripts/forms, bounded JavaScript endpoint/parameter extraction, TCP services, bounded network expansion, and RDAP ownership.
+- DNS A/AAAA/CNAME/NS/MX/TXT/PTR, paginated CT subdomains, historical URL-host hypotheses, HTTP/HTML links/scripts/forms, bounded JavaScript endpoint/parameter extraction, TCP services, bounded network expansion, and RDAP ownership.
+- Pinned isolated implementations for multi-source passive subdomains (Subfinder), historical URLs (URLFinder), HTTP/TLS/ASN/CDN/technology enrichment (HTTPX), same-host crawling (Katana), TCP-connect port discovery (Naabu), AST-aware JavaScript analysis (JSLuice), bounded name mutations (AlterX), and local CDN/cloud/WAF range classification (CDNCheck).
 - Dynamic capability consumers and plugin discovery.
 - Central scope, passive/balanced/active modes, direct/derived semantics, exclusions, and reconciliation.
-- Priorities, dependencies, bounded concurrency, rate spacing, retries/backoff, leases, cache reuse, cancellation, resumability, and task ceilings.
-- API, CLI, UI, metrics, events/logs, notification adapters, Docker Compose, migrations, and CI security audits.
+- Priorities, manifest capability dependencies, bounded concurrency, rate spacing, retries/backoff, leases, cache reuse, cancellation, resumability, and task ceilings.
+- API, CLI, UI, metrics, events/logs, notification adapters, Docker Compose, migrations, CI security audits, and a non-root authenticated tool execution plane separated from PostgreSQL.
+
+The evidence, overlap analysis, implementation/fallback choices, and broader methodology
+are maintained in [Research and capability map](research-and-capability-map.md).
 
 ## Highest-value capability additions
 
-1. Passive sources with credential-aware quotas: additional CT/DNS datasets, ASN/BGP, historical DNS, archive URLs, and organization-to-domain pivots.
-2. Deeper JavaScript analysis: source maps, AST-based extraction, API schemas, dynamic imports, redacted secret-candidate verification, and framework routes.
-3. HTTP intelligence: TLS/certificate entities, redirect chains with scope-aware validation, headers/cookies, favicon/body hashes, virtual hosts, CDN/WAF/cloud attribution, and screenshot artifacts.
-4. Service discovery implementations behind `network.port_discovery` and service fingerprinting with per-program safety profiles.
-5. API discovery: OpenAPI/GraphQL/gRPC artifacts, parameters, methods, auth surfaces, and relationship-aware schema expansion.
-6. Repository/source intelligence: authorized organization/repository providers, commit/history artifacts, IaC routes/domains/cloud resources, and token-safe evidence.
-7. Cloud discovery: buckets, storage endpoints, load balancers, serverless endpoints, tenant IDs, and provider-resource relationships.
-8. Historical/change intelligence: first-class removal confirmation, DNS/service/technology diffs, notification rules, and scheduled scan policies.
+1. Passive sources with credential-aware distributed quotas: historical DNS, ASN/BGP and reverse-WHOIS organization pivots, code-host search, provider attribution, and source-health scoring.
+2. API intelligence: OpenAPI/Swagger/Postman discovery and parsing, GraphQL/gRPC/GraphQL-over-WebSocket artifacts, parameters, methods, auth surfaces, schema relationships, and Kiterunner-style route dictionaries.
+3. Repository/source intelligence: authorized organization/repository providers, history-aware secret-candidate verification, IaC-derived domains/routes/cloud resources, CI artifacts, package metadata, and token-safe evidence.
+4. Cloud/SaaS discovery: storage endpoints, load balancers, serverless endpoints, tenant IDs, dangling provider bindings, mobile-app associations, and provider-resource relationships.
+5. Deeper web analysis: source maps, dynamic imports and chunks, framework manifests/routes, WebAssembly imports/strings, WebSocket/SSE channels, service workers, browser extension surfaces, and screenshot artifacts.
+6. Validation implementations: wildcard-aware high-throughput DNS resolution, virtual-host comparison, bounded content discovery, service fingerprinting, and response-similarity suppression with per-program safety profiles.
+7. Historical/change intelligence: first-class multi-observation removal confirmation, DNS/service/technology/content diffs, notification rules, and scheduled scan policies.
+8. Quality intelligence: source precision/recall tracking, result confidence fusion, false-positive feedback, stale-observation policy, and cost-aware capability selection.
+9. Maximum-yield DNS: wildcard/poisoning-aware batched validation, a checksum-pinned maintained wordlist, bounded recursive zone discovery, corpus-driven mutations, and chunked checkpointed ingestion for source results above one task's in-memory budget.
 
 ## Platform improvements
 
 - Distributed global/provider rate-limit buckets rather than database-visible per-target start spacing.
+- Explicit capability policies (`parallel_consensus`, `preferred_then_fallback`, and enrichment chains) rather than always running every matching implementation.
 - Scheduler fairness by tenant/program and queue-age SLOs.
 - Heartbeats for modules whose safe execution can exceed their declared timeout.
-- Process/container isolation profiles for third-party tools.
+- Stronger per-task sandboxing for third-party tools (seccomp/AppArmor, rootless runtime,
+  per-capability egress policy, signed binaries, and image attestations).
 - Object storage for large evidence with hashes, retention, and redaction.
 - PostgreSQL-native search/materialized graph summaries for million-node programs.
 - WebSocket/SSE event streaming and visual graph exploration.

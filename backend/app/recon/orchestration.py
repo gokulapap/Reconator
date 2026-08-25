@@ -41,7 +41,7 @@ from app.recon.modules.base import (
 )
 from app.recon.modules.builtin import register_builtin_modules
 from app.recon.modules.registry import ModuleRegistry, registry
-from app.recon.normalization import NormalizedAsset, stable_digest
+from app.recon.normalization import NormalizedAsset, normalize_asset, stable_digest
 from app.recon.scope import ScopePolicy, create_root_scope_rules
 
 log = logging.getLogger(__name__)
@@ -54,6 +54,7 @@ _ALL_TERMINAL = _SUCCESS_TERMINAL | {
     TaskStatus.failed.value,
     TaskStatus.cancelled.value,
 }
+_CANDIDATE_VALIDATORS = {"dns.system.a", "dns.system.aaaa"}
 
 
 class TaskScheduler:
@@ -71,6 +72,20 @@ class TaskScheduler:
         config["allow_private_networks"] = bool(
             settings.allow_private_targets and config.get("allow_private_networks", False)
         )
+        if target.target_kind == "url":
+            # Protected, engine-derived scope context. Tool adapters may narrow
+            # outbound requests with it, while users cannot widen it through
+            # module configuration.
+            config["_authorized_url_prefix"] = normalize_asset("url", target.url).canonical_value
+            config["_excluded_url_prefixes"] = list(
+                self.db.scalars(
+                    select(ScopeRule.normalized_pattern).where(
+                        ScopeRule.target_id == target.id,
+                        ScopeRule.action == "exclude",
+                        ScopeRule.rule_type == "url_prefix",
+                    )
+                )
+            )
         return config
 
     def _scope(self, target_id: int) -> ScopePolicy:
@@ -176,6 +191,35 @@ class TaskScheduler:
                 )
                 break
             manifest = module.manifest
+            attributes = observed.normalized.attributes
+            is_unvalidated_candidate = bool(
+                observed.asset.kind == "domain"
+                and attributes.get("candidate") is True
+                and attributes.get("validated") is False
+            )
+            if is_unvalidated_candidate and manifest.name not in _CANDIDATE_VALIDATORS:
+                continue
+            if observed.asset.kind == "url":
+                is_seed = attributes.get("seed") is True
+                is_origin = bool(
+                    attributes.get("path") == "/" and not attributes.get("query_parameters")
+                )
+                # Probers run once for a user seed or host asset. Crawlers run
+                # once per canonical origin, never once per discovered path.
+                if manifest.capability == "http.probe" and not is_seed:
+                    continue
+                if manifest.capability == "web.crawl" and not (
+                    (is_seed and not attributes.get("query_parameters")) or is_origin
+                ):
+                    continue
+            if (
+                manifest.mode == ModuleMode.active
+                and target.target_kind == "url"
+                and observed.asset.kind == "domain"
+            ):
+                # The host entity is useful for correlation/passive work, but a
+                # URL-prefix authorization does not authorize probing host root.
+                continue
             derived_scope = bool(
                 not scope_decision.allowed
                 and parent_task_id is not None
@@ -281,7 +325,62 @@ class TaskScheduler:
             if cached:
                 task_cache_hits_total.labels(module=manifest.name).inc()
                 self._replay_cached_assets(target, task, cached)
+        self._attach_dependencies(target, observed.asset.id, scheduled)
         return scheduled
+
+    def _attach_dependencies(
+        self, target: Target, input_asset_id: int, tasks: list[ReconTask]
+    ) -> None:
+        for task in tasks:
+            if task.status != TaskStatus.queued.value:
+                continue
+            module = self.registry.get(task.module_name)
+            required = module.manifest.depends_on_capabilities if module else frozenset()
+            if not required:
+                continue
+            predecessors = list(
+                self.db.scalars(
+                    select(ReconTask).where(
+                        ReconTask.target_id == target.id,
+                        ReconTask.input_asset_id == input_asset_id,
+                        ReconTask.id != task.id,
+                        ReconTask.capability.in_(required),
+                    )
+                )
+            )
+            found = {predecessor.capability for predecessor in predecessors}
+            missing = sorted(required - found)
+            if missing:
+                task.status = TaskStatus.skipped.value
+                task.completed_at = utcnow()
+                task.error_code = "dependency_unavailable"
+                task.error_detail = (
+                    f"required capabilities were not scheduled: {', '.join(missing)}"
+                )
+            else:
+                for predecessor in predecessors:
+                    self.db.add(TaskDependency(task_id=task.id, depends_on_id=predecessor.id))
+                if any(
+                    predecessor.status in {TaskStatus.failed.value, TaskStatus.cancelled.value}
+                    for predecessor in predecessors
+                ):
+                    task.status = TaskStatus.skipped.value
+                    task.completed_at = utcnow()
+                    task.error_code = "dependency_failed"
+                    task.error_detail = "a required predecessor did not complete successfully"
+                elif any(
+                    predecessor.status not in _SUCCESS_TERMINAL for predecessor in predecessors
+                ):
+                    task.status = TaskStatus.blocked.value
+            if task.status != TaskStatus.queued.value:
+                self.knowledge.record_event(
+                    target_id=target.id,
+                    task_id=task.id,
+                    event_type="task.dependency_wait",
+                    level="warning" if task.status == TaskStatus.skipped.value else "info",
+                    message=task.error_detail or "Task is waiting for required capabilities",
+                    data={"required_capabilities": sorted(required)},
+                )
 
     def _replay_cached_assets(self, target: Target, task: ReconTask, cached: ReconTask) -> None:
         asset_ids = (cached.output_summary or {}).get("asset_ids", [])
@@ -416,16 +515,26 @@ class TaskScheduler:
                 task.available_at = now + timedelta(milliseconds=250)
                 self.db.commit()
                 continue
-            unmet = self.db.scalar(
-                select(func.count())
-                .select_from(TaskDependency)
-                .join(dependency, dependency.id == TaskDependency.depends_on_id)
-                .where(
-                    TaskDependency.task_id == task.id,
-                    dependency.status.notin_(_SUCCESS_TERMINAL),
+            dependency_statuses = list(
+                self.db.scalars(
+                    select(dependency.status)
+                    .select_from(TaskDependency)
+                    .join(dependency, dependency.id == TaskDependency.depends_on_id)
+                    .where(TaskDependency.task_id == task.id)
                 )
             )
-            if unmet:
+            if any(
+                status in {TaskStatus.failed.value, TaskStatus.cancelled.value}
+                for status in dependency_statuses
+            ):
+                task.status = TaskStatus.skipped.value
+                task.error_code = "dependency_failed"
+                task.error_detail = "a required predecessor did not complete successfully"
+                task.completed_at = now
+                self._finalize_if_idle(target_lock)
+                self.db.commit()
+                continue
+            if any(status not in _SUCCESS_TERMINAL for status in dependency_statuses):
                 task.status = TaskStatus.blocked.value
                 self.db.commit()
                 continue
@@ -614,7 +723,20 @@ class TaskScheduler:
             task.status = TaskStatus.completed.value
             task.completed_at = utcnow()
             raw_output = result.raw_output or ""
-            task.raw_output = raw_output[: settings.max_raw_output_bytes] or None
+            retained_for_scan = int(
+                self.db.scalar(
+                    select(func.coalesce(func.sum(func.length(ReconTask.raw_output)), 0)).where(
+                        ReconTask.target_id == target.id,
+                        ReconTask.raw_output.isnot(None),
+                    )
+                )
+                or 0
+            )
+            remaining_scan_budget = max(
+                settings.max_raw_output_bytes_per_scan - retained_for_scan, 0
+            )
+            raw_limit = min(settings.max_raw_output_bytes, remaining_scan_budget)
+            task.raw_output = raw_output[:raw_limit] or None
             task.output_summary = {
                 **result.metadata,
                 "asset_ids": [item.asset.id for item in persisted.assets],
@@ -623,7 +745,8 @@ class TaskScheduler:
                 "relationship_count": len(persisted.relationship_ids),
                 "validation_error_count": len(persisted.validation_errors),
                 "validation_errors": persisted.validation_errors[:20],
-                "raw_output_truncated": len(raw_output) > settings.max_raw_output_bytes,
+                "raw_output_truncated": len(raw_output) > raw_limit,
+                "raw_output_scan_budget_exhausted": bool(raw_output and remaining_scan_budget == 0),
             }
             self._clear_lease(task)
             self.knowledge.record_event(
@@ -645,7 +768,7 @@ class TaskScheduler:
                     data={"errors": persisted.validation_errors[:20]},
                 )
             for item in persisted.assets:
-                if item.new_to_scan:
+                if item.new_to_scan or item.changed:
                     self.schedule_for_asset(target, item, parent_task_id=task.id)
         self._unblock_dependents(task.id)
         self._finalize_if_idle(target)
@@ -660,6 +783,11 @@ class TaskScheduler:
         task.error_detail = str(exc)[:4_000]
         self._clear_lease(task)
         now = utcnow()
+        if exc.code == "toolbox_http_429":
+            # Capacity pressure is queueing, not an execution failure. Do not
+            # burn the module's finite retry budget while the isolated tool
+            # plane is busy with other authorized work.
+            task.attempts = max(task.attempts - 1, 0)
         if exc.retryable and task.attempts < task.max_attempts:
             task.status = TaskStatus.retry_wait.value
             task.available_at = now + timedelta(

@@ -46,6 +46,7 @@ export function Targets() {
   const [tab, setTab] = useState<"all" | TargetStatus>("all");
   const [search, setSearch] = useState("");
   const [tag, setTag] = useState("");
+  const [page, setPage] = useState(1);
 
   const [singleOpen, setSingleOpen] = useState(false);
   const [singleUrl, setSingleUrl] = useState("");
@@ -62,17 +63,19 @@ export function Targets() {
   const [bulkProfile, setBulkProfile] = useState<"passive" | "balanced" | "active">("balanced");
   const [bulkAuthorized, setBulkAuthorized] = useState(false);
   const [bulkModules, setBulkModules] = useState<string[]>([]);
+  const [bulkResult, setBulkResult] = useState<Awaited<ReturnType<typeof api.bulkCreate>> | null>(null);
 
   const modules = useQuery({ queryKey: ["modules"], queryFn: api.modules });
 
   const targets = useQuery({
-    queryKey: ["targets", tab, search, tag],
+    queryKey: ["targets", tab, search, tag, page],
     queryFn: () =>
       api.listTargets({
         status: tab === "all" ? undefined : tab,
         search: search || undefined,
         tag: tag || undefined,
-        page_size: 100,
+        page,
+        page_size: 25,
       }),
     refetchInterval: 5000,
   });
@@ -118,11 +121,15 @@ export function Targets() {
             ? `${r.conflicts.length} conflicts · ${Object.keys(r.errors).length} errors`
             : undefined,
       });
-      setBulkOpen(false);
-      setBulkText("");
-      setBulkTags("");
-      setBulkAuthorized(false);
-      setBulkModules([]);
+      setBulkResult(r);
+      if (!r.conflicts.length && !Object.keys(r.errors).length) {
+        setBulkOpen(false);
+        setBulkText("");
+        setBulkTags("");
+        setBulkAuthorized(false);
+        setBulkModules([]);
+        setBulkResult(null);
+      }
       qc.invalidateQueries();
     },
     onError: (e: Error) =>
@@ -150,6 +157,7 @@ export function Targets() {
       .filter(Boolean);
 
   const submitBulk = () => {
+    setBulkResult(null);
     const urls = bulkText
       .split(/\r?\n/)
       .map((s) => s.trim())
@@ -174,11 +182,11 @@ export function Targets() {
             Add authorized domains, URLs, IP addresses, or CIDRs to queue recon.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void api.exportTargets("csv")}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => void api.exportTargets("csv").catch((error: Error) => toast({ variant: "destructive", title: "Export failed", description: error.message }))}>
             <Download /> CSV
           </Button>
-          <Button variant="outline" size="sm" onClick={() => void api.exportTargets("json")}>
+          <Button variant="outline" size="sm" onClick={() => void api.exportTargets("json").catch((error: Error) => toast({ variant: "destructive", title: "Export failed", description: error.message }))}>
             <Download /> JSON
           </Button>
 
@@ -231,11 +239,6 @@ export function Targets() {
                 <option value="balanced">Balanced — safe active discovery</option>
                 <option value="active">Active — explicitly selected active modules</option>
               </select>
-              <ModulePicker
-                modules={modules.data ?? []}
-                selected={singleModules}
-                onChange={setSingleModules}
-              />
               <label className="flex items-start gap-2 text-sm text-muted-foreground">
                 <input
                   type="checkbox"
@@ -245,6 +248,13 @@ export function Targets() {
                 />
                 I confirm I am authorized to assess every target in this list.
               </label>
+              {bulkResult && (bulkResult.conflicts.length > 0 || Object.keys(bulkResult.errors).length > 0) && (
+                <div className="max-h-44 overflow-auto rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                  <p className="font-medium text-amber-700 dark:text-amber-300">Partial result — successful targets were queued. Fix and retry only these entries.</p>
+                  {bulkResult.conflicts.map((value) => <p key={`conflict-${value}`} className="mt-2 break-all font-mono">{value}: already queued or running</p>)}
+                  {Object.entries(bulkResult.errors).map(([value, error]) => <p key={value} className="mt-2 break-all font-mono">{value}: {error}</p>)}
+                </div>
+              )}
               <DialogFooter>
                 <Button
                   disabled={!bulkText.trim() || !bulkAuthorized || bulk.isPending}
@@ -311,6 +321,11 @@ export function Targets() {
                 <option value="balanced">Balanced — safe active discovery</option>
                 <option value="active">Active — explicitly selected active modules</option>
               </select>
+              <ModulePicker
+                modules={modules.data ?? []}
+                selected={singleModules}
+                onChange={setSingleModules}
+              />
               <label className="flex items-start gap-2 text-sm text-muted-foreground">
                 <input
                   type="checkbox"
@@ -344,8 +359,8 @@ export function Targets() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 flex-wrap">
-          <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
-            <TabsList>
+          <Tabs value={tab} onValueChange={(v) => { setTab(v as "all" | TargetStatus); setPage(1); }} className="max-w-full overflow-x-auto">
+            <TabsList className="w-max">
               {tabs.map((t) => (
                 <TabsTrigger key={t.id} value={t.id}>
                   {t.label}
@@ -353,29 +368,33 @@ export function Targets() {
               ))}
             </TabsList>
           </Tabs>
-          <div className="flex items-center gap-2">
-            <div className="relative w-56">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            <div className="relative min-w-[12rem] flex-1 sm:w-56">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 className="pl-8"
                 placeholder="Search domains"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                aria-label="Search targets"
               />
             </div>
-            <div className="relative w-44">
+            <div className="relative min-w-[10rem] flex-1 sm:w-44">
               <Tag className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 className="pl-8"
                 placeholder="Filter by tag"
                 value={tag}
-                onChange={(e) => setTag(e.target.value)}
+                onChange={(e) => { setTag(e.target.value); setPage(1); }}
+                aria-label="Filter targets by tag"
               />
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          {targets.isLoading ? (
+          {targets.isError ? (
+            <p className="text-sm text-rose-600 dark:text-rose-400">Unable to load targets: {targets.error.message}</p>
+          ) : targets.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : !targets.data?.items.length ? (
             <p className="text-sm text-muted-foreground">No targets match.</p>
@@ -439,7 +458,11 @@ export function Targets() {
                           size="icon"
                           variant="ghost"
                           title="Delete"
-                          onClick={() => remove.mutate(t.id)}
+                          aria-label={`Delete ${t.url}`}
+                          disabled={remove.isPending}
+                          onClick={() => {
+                            if (window.confirm(`Delete ${t.url} and all of its scan history, tasks, and evidence? This cannot be undone.`)) remove.mutate(t.id);
+                          }}
                         >
                           <Trash2 className="text-rose-400" />
                         </Button>
@@ -450,6 +473,7 @@ export function Targets() {
               </TableBody>
             </Table>
           )}
+          {(targets.data?.total ?? 0) > (targets.data?.page_size ?? 25) && <div className="mt-4 flex items-center justify-between gap-3"><Button size="sm" variant="outline" disabled={page <= 1 || targets.isFetching} onClick={() => setPage((value) => Math.max(value - 1, 1))}>Previous</Button><span className="text-xs text-muted-foreground">Page {page} of {Math.ceil((targets.data?.total ?? 0) / (targets.data?.page_size ?? 25))}</span><Button size="sm" variant="outline" disabled={page >= Math.ceil((targets.data?.total ?? 0) / (targets.data?.page_size ?? 25)) || targets.isFetching} onClick={() => setPage((value) => value + 1)}>Next</Button></div>}
         </CardContent>
       </Card>
     </div>
@@ -472,11 +496,15 @@ function ModulePicker({
       </summary>
       <div className="mt-3 max-h-48 space-y-2 overflow-auto">
         {modules.map((module) => (
-          <label key={module.name} className="flex items-start gap-2">
+          <label
+            key={module.name}
+            className={`flex items-start gap-2 ${module.available ? "" : "opacity-50"}`}
+          >
             <input
               type="checkbox"
               className="mt-1"
               checked={selected.includes(module.name)}
+              disabled={!module.available}
               onChange={(event) =>
                 onChange(
                   event.target.checked
@@ -486,7 +514,9 @@ function ModulePicker({
               }
             />
             <span>
-              <span className="font-mono text-xs">{module.name}</span>
+              <span className="font-mono text-xs">
+                {module.name}{!module.available && " · unavailable"}
+              </span>
               <span className="block text-xs text-muted-foreground">{module.description}</span>
             </span>
           </label>

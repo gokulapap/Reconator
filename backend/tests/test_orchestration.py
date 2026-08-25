@@ -1,6 +1,13 @@
 from datetime import timedelta
 
-from app.db.models import AssetObservation, ReconTask, Target, TargetStatus, TaskStatus
+from app.db.models import (
+    AssetObservation,
+    ReconTask,
+    Target,
+    TargetStatus,
+    TaskDependency,
+    TaskStatus,
+)
 from app.recon.knowledge import utcnow
 from app.recon.modules.base import (
     AssetEmission,
@@ -302,3 +309,207 @@ def test_derived_scope_allows_opted_in_passive_work_but_never_active_work(db):
     }
     derived = next(task for task in tasks if task.module_name == "test.derived_passive")
     assert derived.scope_basis == "derived"
+
+
+class CandidateValidator:
+    manifest = ModuleManifest(
+        name="dns.system.a",
+        version="test",
+        description="candidate validator fixture",
+        capability="dns.resolve",
+        consumes=frozenset({"domain"}),
+        produces=frozenset({"domain"}),
+        mode=ModuleMode.active,
+        default_profiles=frozenset({"active"}),
+        cache_ttl_seconds=0,
+    )
+
+    def execute(self, context):
+        return ModuleResult()
+
+
+class CandidateDownstream:
+    manifest = ModuleManifest(
+        name="http.probe",
+        version="test",
+        description="downstream fixture",
+        capability="http.probe",
+        consumes=frozenset({"domain"}),
+        produces=frozenset({"url"}),
+        mode=ModuleMode.active,
+        default_profiles=frozenset({"active"}),
+        cache_ttl_seconds=0,
+    )
+
+    def execute(self, context):
+        return ModuleResult()
+
+
+class OriginCrawler:
+    manifest = ModuleManifest(
+        name="test.origin_crawler",
+        version="1",
+        description="origin crawler fixture",
+        capability="web.crawl",
+        consumes=frozenset({"url"}),
+        produces=frozenset({"url"}),
+        mode=ModuleMode.active,
+        default_profiles=frozenset({"active"}),
+        cache_ttl_seconds=0,
+    )
+
+    def execute(self, context):
+        return ModuleResult()
+
+
+def test_unvalidated_domain_hypothesis_only_schedules_dns_validation(db):
+    module_registry = ModuleRegistry()
+    module_registry.register(CandidateValidator())
+    module_registry.register(CandidateDownstream())
+    target = Target(
+        url="example.com",
+        profile="active",
+        selected_modules=["dns.system.a", "http.probe"],
+        authorization_confirmed=True,
+    )
+    db.add(target)
+    db.flush()
+    scheduler = TaskScheduler(db, module_registry)
+    scheduler.bootstrap(target)
+
+    candidate = scheduler.knowledge.observe_asset(
+        target_id=target.id,
+        task_id=None,
+        module_name="toolbox.alterx",
+        emission=AssetEmission(
+            "domain",
+            "api-dev.example.com",
+            {"candidate": True, "validated": False},
+            confidence=0.2,
+        ),
+    )
+    scheduler.schedule_for_asset(target, candidate)
+    candidate_tasks = (
+        db.query(ReconTask).filter(ReconTask.input_asset_id == candidate.asset.id).all()
+    )
+    assert {task.module_name for task in candidate_tasks} == {"dns.system.a"}
+
+    validated = scheduler.knowledge.observe_asset(
+        target_id=target.id,
+        task_id=candidate_tasks[0].id,
+        module_name="dns.system.a",
+        emission=AssetEmission(
+            "domain",
+            "api-dev.example.com",
+            {"candidate": False, "validated": True},
+        ),
+    )
+    assert validated.changed is True
+    assert validated.new_to_scan is False
+    scheduler.schedule_for_asset(target, validated, parent_task_id=candidate_tasks[0].id)
+    promoted_tasks = (
+        db.query(ReconTask).filter(ReconTask.input_asset_id == candidate.asset.id).all()
+    )
+    assert {task.module_name for task in promoted_tasks} == {
+        "dns.system.a",
+        "http.probe",
+    }
+
+
+def test_web_crawl_is_scheduled_once_per_origin_not_per_path(db):
+    module_registry = ModuleRegistry()
+    module_registry.register(OriginCrawler())
+    target = Target(
+        url="example.com",
+        profile="active",
+        selected_modules=["test.origin_crawler"],
+        authorization_confirmed=True,
+    )
+    db.add(target)
+    db.flush()
+    scheduler = TaskScheduler(db, module_registry)
+    scheduler.bootstrap(target)
+
+    for value in [
+        "https://app.example.com/",
+        "https://app.example.com/api/users",
+        "https://app.example.com/settings",
+    ]:
+        observed = scheduler.knowledge.observe_asset(
+            target_id=target.id,
+            task_id=None,
+            module_name="fixture",
+            emission=AssetEmission("url", value),
+        )
+        scheduler.schedule_for_asset(target, observed)
+
+    tasks = db.query(ReconTask).filter(ReconTask.module_name == "test.origin_crawler").all()
+    assert [task.input_asset.canonical_value for task in tasks] == ["https://app.example.com/"]
+
+
+class DependencyFixture:
+    manifest = ModuleManifest(
+        name="test.dependency",
+        version="1",
+        description="dependency fixture",
+        capability="test.prerequisite",
+        consumes=frozenset({"domain"}),
+        produces=frozenset({"technology"}),
+        mode=ModuleMode.local,
+        default_profiles=frozenset({"passive"}),
+        priority=100,
+        cache_ttl_seconds=0,
+    )
+
+    def execute(self, context):
+        return ModuleResult()
+
+
+class DependentFixture:
+    manifest = ModuleManifest(
+        name="test.dependent",
+        version="1",
+        description="dependent fixture",
+        capability="test.dependent",
+        consumes=frozenset({"domain"}),
+        produces=frozenset({"technology"}),
+        mode=ModuleMode.local,
+        default_profiles=frozenset({"passive"}),
+        priority=200,
+        cache_ttl_seconds=0,
+        depends_on_capabilities=frozenset({"test.prerequisite"}),
+    )
+
+    def execute(self, context):
+        return ModuleResult()
+
+
+def test_manifest_dependencies_create_edges_and_gate_execution(db):
+    module_registry = ModuleRegistry()
+    module_registry.register(DependencyFixture())
+    module_registry.register(DependentFixture())
+    target = Target(
+        url="dependency.example.com",
+        profile="passive",
+        selected_modules=["test.dependency", "test.dependent"],
+        authorization_confirmed=True,
+    )
+    db.add(target)
+    db.flush()
+    scheduler = TaskScheduler(db, module_registry)
+    scheduler.bootstrap(target)
+    db.commit()
+
+    dependent = db.query(ReconTask).filter_by(module_name="test.dependent").one()
+    prerequisite = db.query(ReconTask).filter_by(module_name="test.dependency").one()
+    assert dependent.status == TaskStatus.blocked.value
+    edge = db.query(TaskDependency).one()
+    assert (edge.task_id, edge.depends_on_id) == (dependent.id, prerequisite.id)
+
+    first = scheduler.claim_next("dependency-worker")
+    assert first.id == prerequisite.id
+    scheduler.execute_claimed(first.id, "dependency-worker")
+    db.refresh(dependent)
+    assert dependent.status == TaskStatus.queued.value
+    second = scheduler.claim_next("dependency-worker")
+    assert second.id == dependent.id

@@ -17,9 +17,9 @@ Every module consumes normalized assets, emits structured assets and relationshi
 - Passive, balanced, and active profiles plus per-scan/per-module configuration.
 - FastAPI API, automation CLI, React operations UI, Prometheus metrics, structured logs, request IDs, notifications, and Sentry integration.
 - Horizontally safe PostgreSQL workers using leased tasks and `FOR UPDATE SKIP LOCKED`.
-- Docker Compose production topology with a migration gate, PostgreSQL, API, multiple workers, and an Nginx UI; services run non-root with dropped capabilities and read-only filesystems.
+- Docker Compose production topology with a migration gate, PostgreSQL, API, multiple workers, an authenticated isolated tool plane, and an Nginx UI; services run non-root with dropped capabilities and read-only filesystems.
 
-The bundled v3 modules establish the framework loop with DNS A/AAAA/CNAME/NS/MX/TXT/PTR intelligence, certificate-transparency discovery, HTTP probing and HTML surface extraction, bounded JavaScript endpoint/parameter analysis, URL modeling, bounded CIDR expansion, TCP connect discovery, and RDAP ownership enrichment. Additional tools belong behind module contracts rather than in the core.
+The bundled modules establish the framework loop with DNS A/AAAA/CNAME/NS/MX/TXT/PTR intelligence, certificate-transparency discovery, HTTP/HTML extraction, JavaScript endpoint/parameter analysis, URL modeling, bounded CIDR expansion, TCP discovery, and RDAP enrichment. A separate constrained toolbox adds pinned Subfinder, URLFinder, HTTPX, Katana, Naabu connect scanning, JSLuice, AlterX, and CDNCheck implementations. Subfinder uses all configured sources by default, merges provider attribution per hostname, and converges with independent CT results through canonical deduplication. All tool outputs still pass through Reconator's normalization, scope, provenance, graph, and scheduling contracts.
 
 ## Architecture
 
@@ -46,14 +46,15 @@ Requirements: Docker Engine with Compose v2.
 
 ```bash
 cp .env.example .env
-# Replace ADMIN_API_KEY and POSTGRES_PASSWORD in .env with long random values.
+# Replace ADMIN_API_KEY, POSTGRES_PASSWORD, and TOOLBOX_SHARED_SECRET
+# with independent long random values.
 docker compose up --build -d
 docker compose ps
 ```
 
 Open `http://localhost:3000`, then enter `ADMIN_API_KEY` on the Settings page. API documentation is at `http://localhost:8000/docs`.
 
-The API and UI bind to loopback by default. Put them behind an authenticated TLS reverse proxy before exposing them to a network.
+The API and UI bind to loopback by default. The toolbox has no published host port and no database-network access. Put the user-facing services behind an authenticated TLS reverse proxy before exposing them to a network.
 
 Create a scan through the API:
 
@@ -118,6 +119,8 @@ Example bounded module configuration:
 
 - `POST /api/v1/targets` and `/targets/bulk` — create authorized scans.
 - `GET /api/v1/targets/{id}/assets` — canonical scan assets.
+- `GET /api/v1/targets/{id}/assets/{asset_id}` — evidence, provenance, snapshots, and graph pivots for one observed asset.
+- `GET /api/v1/targets/{id}/knowledge-summary` — per-scan entity, relationship, source, and task distributions.
 - `GET /api/v1/targets/{id}/graph` — graph nodes and typed edges.
 - `GET /api/v1/targets/{id}/tasks` — task state, attempts, parents, cache hits, and errors.
 - `GET /api/v1/targets/{id}/events` — execution timeline.
@@ -141,6 +144,8 @@ cd backend
 cd ../frontend
 npm ci
 npm audit --audit-level=high
+npm test
+npm run lint
 npm run build
 ```
 
@@ -157,7 +162,7 @@ CI verifies lint, tests, a real PostgreSQL migration, Python/npm vulnerability a
 
 Implement `ReconModule`, declare a truthful `ModuleManifest`, return normalized emissions, and register an entry point in the `reconator.modules` group. Command-backed integrations receive argv elements directly; shell interpreters are rejected, process groups are timed out, and retained stdout/stderr is bounded.
 
-Read [module-development.md](docs/module-development.md) before adding a capability. Coverage decisions and remaining high-value work are tracked in [coverage-and-roadmap.md](docs/coverage-and-roadmap.md), while [competitive-analysis.md](docs/competitive-analysis.md) explains Reconator’s architectural positioning.
+Read [module-development.md](docs/module-development.md) before adding a capability. The current methodology, ecosystem evidence, tool selection, overlap decisions, and full capability map are in [research-and-capability-map.md](docs/research-and-capability-map.md). Remaining high-value work is tracked in [coverage-and-roadmap.md](docs/coverage-and-roadmap.md), while [competitive-analysis.md](docs/competitive-analysis.md) explains Reconator’s architectural positioning.
 
 ## Legacy directory
 

@@ -26,6 +26,33 @@ Shell pipelines built around subdomain, probing, URL, crawling, and template too
 
 Reconator does not compete by hiding those tools behind buttons. It supplies the control plane and knowledge layer in which a tool can be one replaceable implementation. Coverage should grow through typed adapters and fixtures, not by restoring an opaque sequential script.
 
+## reNgine and reconFTW
+
+[reNgine](https://github.com/yogeshojha/rengine) demonstrates the value of a
+web-operated continuous reconnaissance surface, scan engines, findings, and team
+workflows. [reconFTW](https://github.com/six2dez/reconftw) demonstrates unusually broad
+practical bug-bounty coverage and productive tool composition. Both are important
+operator references; their breadth also highlights why compatibility, data contracts,
+resume semantics, and tool churn must be owned above individual commands.
+
+Reconator keeps the useful operational lessons while making graph identity, scope basis,
+task ancestry, source evidence, and implementation choice first-class. The isolated
+toolbox now integrates a deliberately small set of complementary implementations; it is
+not a mechanism for exposing a generic shell runner.
+
+## ProjectDiscovery ecosystem
+
+ProjectDiscovery tools provide strong composable implementations for passive discovery,
+HTTP enrichment, crawling, port discovery, permutations, archive collection, and
+infrastructure classification. Reconator uses selected pinned tools behind capabilities
+and normalized graph contracts. This preserves each implementation's speed while making
+fallback, comparison, cache invalidation, provenance, safety mode, and downstream task
+generation framework concerns.
+
+The broader evidence and deduplicated lifecycle are recorded in
+[Research and capability map](research-and-capability-map.md); selection is based on
+incremental discovery value and output quality rather than tool count.
+
 ## Where Reconator is stronger
 
 - Durable global asset identity plus per-scan/source evidence.

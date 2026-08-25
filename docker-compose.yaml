@@ -15,6 +15,7 @@ x-backend-environment: &backend-environment
   MAX_RELATIONSHIP_EMISSIONS_PER_TASK: ${MAX_RELATIONSHIP_EMISSIONS_PER_TASK:-20000}
   MAX_EMISSION_METADATA_BYTES: ${MAX_EMISSION_METADATA_BYTES:-65536}
   MAX_RAW_OUTPUT_BYTES: ${MAX_RAW_OUTPUT_BYTES:-2000000}
+  MAX_RAW_OUTPUT_BYTES_PER_SCAN: ${MAX_RAW_OUTPUT_BYTES_PER_SCAN:-50000000}
   MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-1000000}
   RATE_LIMIT_WRITES: ${RATE_LIMIT_WRITES:-20/minute}
   RATE_LIMIT_BULK: ${RATE_LIMIT_BULK:-5/minute}
@@ -24,6 +25,8 @@ x-backend-environment: &backend-environment
   WEBHOOK_KIND: ${WEBHOOK_KIND:-generic}
   ALLOW_PRIVATE_WEBHOOKS: ${ALLOW_PRIVATE_WEBHOOKS:-false}
   SENTRY_DSN: ${SENTRY_DSN:-}
+  TOOLBOX_ENABLED: "true"
+  TOOLBOX_URL: http://toolbox:7777
 
 x-backend-service: &backend-service
   build:
@@ -127,13 +130,19 @@ services:
     command: ["python", "-m", "app.worker"]
     environment:
       <<: *backend-environment
+      TOOLBOX_SHARED_SECRET: ${TOOLBOX_SHARED_SECRET:?set TOOLBOX_SHARED_SECRET in .env}
       WORKER_POLL_INTERVAL_SECONDS: ${WORKER_POLL_INTERVAL_SECONDS:-2}
-      MAX_CONCURRENT_TASKS: ${MAX_CONCURRENT_TASKS:-4}
+      MAX_CONCURRENT_TASKS: ${MAX_CONCURRENT_TASKS:-2}
       MAX_CONCURRENT_TASKS_PER_TARGET: ${MAX_CONCURRENT_TASKS_PER_TARGET:-2}
       TASK_LEASE_SECONDS: ${TASK_LEASE_SECONDS:-180}
     depends_on:
       migrate:
         condition: service_completed_successfully
+      toolbox:
+        condition: service_healthy
+    networks:
+      - backend
+      - recon-egress
     stop_grace_period: 2m
     deploy:
       replicas: ${WORKER_REPLICAS:-2}
@@ -141,6 +150,49 @@ services:
         limits:
           cpus: "2.0"
           memory: 2g
+        reservations:
+          memory: 256m
+
+  toolbox:
+    build:
+      context: ./toolbox
+      dockerfile: Dockerfile
+    image: reconator/toolbox:${RECONATOR_VERSION:-local}
+    environment:
+      TOOLBOX_SHARED_SECRET: ${TOOLBOX_SHARED_SECRET:?set TOOLBOX_SHARED_SECRET in .env}
+      TOOLBOX_MAX_CONCURRENT: ${TOOLBOX_MAX_CONCURRENT:-4}
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    volumes:
+      - ./config/toolbox:/config:ro
+    networks:
+      - recon-egress
+    expose:
+      - "7777"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7777/healthz', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 3g
+          pids: 256
         reservations:
           memory: 256m
 
@@ -176,6 +228,7 @@ networks:
   backend:
     internal: true
   edge:
+  recon-egress:
 
 volumes:
   db-data:

@@ -5,6 +5,7 @@ import json
 import re
 import shlex
 import socket
+import time
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
@@ -29,7 +30,7 @@ from app.recon.modules.base import (
 )
 from app.recon.modules.command import CommandModule, CommandSpec
 from app.recon.modules.registry import ModuleRegistry, registry
-from app.recon.normalization import NormalizationError, normalize_asset
+from app.recon.normalization import NormalizationError, NormalizedAsset, normalize_asset
 
 
 class _SurfaceHTMLParser(HTMLParser):
@@ -148,6 +149,19 @@ def _parse_dns(stdout: str, context: ModuleContext) -> ModuleResult:
                 target=AssetReference(AssetKind.ip_address.value, address),
                 relationship_type="resolves_to",
                 evidence={"resolver_output": candidate},
+            )
+        )
+    if seen:
+        # Promote mutation hypotheses only after an address lookup succeeds.
+        # The scheduler permits unvalidated candidates to reach these bounded
+        # resolvers, then changed-asset scheduling unlocks downstream modules.
+        assets.append(
+            AssetEmission(
+                kind=AssetKind.domain.value,
+                value=context.input_asset.canonical_value,
+                attributes={"candidate": False, "validated": True},
+                evidence={"validation": "address_resolution", "answers": len(seen)},
+                source_name="system-dns",
             )
         )
     return ModuleResult(assets=assets, relationships=relationships)
@@ -603,6 +617,10 @@ class JavaScriptEndpointModule:
         re.I,
     )
 
+    @staticmethod
+    def accepts(asset: NormalizedAsset) -> bool:
+        return asset.attributes.get("historical") is not True
+
     def execute(self, context: ModuleContext) -> ModuleResult:
         allow_private = bool(context.config.get("allow_private_networks", False))
         try:
@@ -728,7 +746,7 @@ class CertificateTransparencyModule:
         mode=ModuleMode.passive,
         default_profiles=frozenset({"passive", "balanced", "active"}),
         priority=150,
-        timeout_seconds=30,
+        timeout_seconds=120,
         max_attempts=3,
         cache_ttl_seconds=21_600,
         rate_limit_per_second=0.2,
@@ -742,87 +760,146 @@ class CertificateTransparencyModule:
     def execute(self, context: ModuleContext) -> ModuleResult:
         root = context.input_asset.canonical_value
         endpoint = "https://api.certspotter.com/v1/issuances"
+        max_pages = min(max(int(context.config.get("max_pages", 25)), 1), 100)
+        max_issuances = min(max(int(context.config.get("max_issuances", 50_000)), 1), 200_000)
+        deadline = time.monotonic() + max(float(context.timeout_seconds), 1.0)
+        assets: list[AssetEmission] = []
+        relationships: list[RelationshipEmission] = []
+        seen: set[str] = set()
+        pages = 0
+        issuances = 0
+        after: str | None = None
+        cursors: set[str] = set()
+        truncated = False
         try:
-            with (
-                httpx.Client(
-                    timeout=min(float(context.timeout_seconds), 30.0),
-                    follow_redirects=False,
-                    trust_env=False,
-                    headers={"User-Agent": "Reconator/3 authorized-recon"},
-                ) as client,
-                client.stream(
-                    "GET",
-                    endpoint,
-                    params={
+            with httpx.Client(
+                follow_redirects=False,
+                trust_env=False,
+                headers={"User-Agent": "Reconator/3 authorized-recon"},
+            ) as client:
+                while pages < max_pages and issuances < max_issuances:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise ModuleExecutionError(
+                            "certificate pagination exceeded the module deadline",
+                            code="source_timeout",
+                        )
+                    params = {
                         "domain": root,
                         "include_subdomains": "true",
                         "expand": "dns_names",
-                    },
-                ) as response,
-            ):
-                response.raise_for_status()
-                payload = bytearray()
-                for chunk in response.iter_bytes():
-                    payload.extend(chunk)
-                    if len(payload) > 5_000_000:
+                    }
+                    if after is not None:
+                        params["after"] = after
+                    with client.stream(
+                        "GET",
+                        endpoint,
+                        params=params,
+                        timeout=min(remaining, 30.0),
+                    ) as response:
+                        response.raise_for_status()
+                        payload = bytearray()
+                        for chunk in response.iter_bytes():
+                            payload.extend(chunk)
+                            if len(payload) > 5_000_000:
+                                raise ModuleExecutionError(
+                                    "certificate response page exceeded 5 MB",
+                                    retryable=False,
+                                    code="response_too_large",
+                                )
+                    try:
+                        records = json.loads(payload)
+                    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
                         raise ModuleExecutionError(
-                            "certificate response exceeded 5 MB",
-                            retryable=False,
-                            code="response_too_large",
+                            "certificate source returned malformed JSON",
+                            code="source_malformed",
+                        ) from exc
+                    if not isinstance(records, list):
+                        raise ModuleExecutionError(
+                            "certificate source returned a non-list page",
+                            code="source_malformed",
                         )
+                    pages += 1
+                    if not records:
+                        break
+                    remaining_issuances = max_issuances - issuances
+                    page_records = records[:remaining_issuances]
+                    if len(page_records) < len(records):
+                        truncated = True
+                    for record in page_records:
+                        if not isinstance(record, dict):
+                            continue
+                        issuances += 1
+                        names = record.get("dns_names", [])
+                        if not isinstance(names, list):
+                            continue
+                        for raw_name in names:
+                            candidate = str(raw_name).removeprefix("*.").rstrip(".").lower()
+                            try:
+                                normalized = normalize_asset(AssetKind.domain, candidate)
+                            except NormalizationError:
+                                continue
+                            if (
+                                normalized.canonical_value == root
+                                or not normalized.canonical_value.endswith(f".{root}")
+                            ):
+                                continue
+                            if normalized.canonical_value in seen:
+                                continue
+                            seen.add(normalized.canonical_value)
+                            evidence = {"source": "certspotter", "root": root}
+                            assets.append(
+                                AssetEmission(
+                                    AssetKind.domain.value,
+                                    normalized.canonical_value,
+                                    {"discovered_via": "certificate_transparency"},
+                                    confidence=0.9,
+                                    evidence=evidence,
+                                    source_name="certspotter",
+                                )
+                            )
+                            relationships.append(
+                                RelationshipEmission(
+                                    source=AssetReference(AssetKind.domain.value, root),
+                                    target=AssetReference(
+                                        AssetKind.domain.value, normalized.canonical_value
+                                    ),
+                                    relationship_type="has_subdomain",
+                                    confidence=0.9,
+                                    evidence=evidence,
+                                )
+                            )
+                    if truncated:
+                        break
+                    last = records[-1]
+                    next_cursor = str(last.get("id", "")) if isinstance(last, dict) else ""
+                    if not next_cursor:
+                        truncated = True
+                        break
+                    if next_cursor in cursors:
+                        raise ModuleExecutionError(
+                            "certificate source repeated a pagination cursor",
+                            retryable=False,
+                            code="source_cursor_loop",
+                        )
+                    cursors.add(next_cursor)
+                    after = next_cursor
+                else:
+                    truncated = True
         except httpx.HTTPError as exc:
             raise ModuleExecutionError(
                 f"certificate transparency request failed: {exc}", code="source_error"
             ) from exc
-        try:
-            records = json.loads(payload)
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise ModuleExecutionError(
-                "certificate source returned malformed JSON",
-                code="source_malformed",
-            ) from exc
-        assets: list[AssetEmission] = []
-        relationships: list[RelationshipEmission] = []
-        seen: set[str] = set()
-        for record in records[:10_000] if isinstance(records, list) else []:
-            names = record.get("dns_names", []) if isinstance(record, dict) else []
-            for raw_name in names:
-                candidate = str(raw_name).removeprefix("*.").rstrip(".").lower()
-                try:
-                    normalized = normalize_asset(AssetKind.domain, candidate)
-                except NormalizationError:
-                    continue
-                if normalized.canonical_value == root or not normalized.canonical_value.endswith(
-                    f".{root}"
-                ):
-                    continue
-                if normalized.canonical_value in seen:
-                    continue
-                seen.add(normalized.canonical_value)
-                evidence = {"source": "certspotter", "root": root}
-                assets.append(
-                    AssetEmission(
-                        AssetKind.domain.value,
-                        normalized.canonical_value,
-                        {"discovered_via": "certificate_transparency"},
-                        confidence=0.9,
-                        evidence=evidence,
-                        source_name="certspotter",
-                    )
-                )
-                relationships.append(
-                    RelationshipEmission(
-                        source=AssetReference(AssetKind.domain.value, root),
-                        target=AssetReference(AssetKind.domain.value, normalized.canonical_value),
-                        relationship_type="has_subdomain",
-                        confidence=0.9,
-                        evidence=evidence,
-                    )
-                )
         return ModuleResult(
             assets=assets,
             relationships=relationships,
-            metadata={"certificate_names": len(assets)},
+            metadata={
+                "certificate_names": len(assets),
+                "issuances_processed": issuances,
+                "pages_fetched": pages,
+                "pagination_truncated": truncated,
+                "last_cursor": after,
+            },
         )
 
 
@@ -1070,6 +1147,8 @@ class HTTPProbeModule:
 
 
 def register_builtin_modules(module_registry: ModuleRegistry = registry) -> None:
+    from app.recon.modules.toolbox import toolbox_modules
+
     builtins = [
         _dns_module("A", 140),
         _dns_module("AAAA", 135),
@@ -1100,6 +1179,7 @@ def register_builtin_modules(module_registry: ModuleRegistry = registry) -> None
         CIDRExpansionModule(),
         RDAPIPModule(),
         URLStructureModule(),
+        *toolbox_modules(),
     ]
     for module in builtins:
         if module_registry.get(module.manifest.name) is None:

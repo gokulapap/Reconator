@@ -52,6 +52,52 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    min-width: 320px;
+    background-image:
+      radial-gradient(circle at 12% -10%, hsl(var(--primary) / 0.08), transparent 28rem),
+      radial-gradient(circle at 92% 5%, hsl(265 85% 65% / 0.06), transparent 25rem);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.25);
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+@layer components {
+  .app-shell::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.28;
+    background-image: linear-gradient(hsl(var(--border) / 0.28) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.28) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: linear-gradient(to bottom, black, transparent 55%);
+  }
+
+  .surface-hero {
+    background:
+      linear-gradient(135deg, hsl(var(--card) / 0.96), hsl(var(--card) / 0.72)),
+      radial-gradient(circle at 86% 10%, hsl(var(--primary) / 0.16), transparent 18rem);
+    box-shadow: inset 0 1px hsl(var(--foreground) / 0.04), 0 22px 70px -45px hsl(var(--primary) / 0.45);
+  }
+
+  .metric-card {
+    @apply border-border/70 bg-card/80 transition-colors hover:border-primary/25;
+    box-shadow: inset 0 1px hsl(var(--foreground) / 0.03);
+  }
+
+  .graph-grid {
+    color: hsl(var(--muted-foreground));
+    background-image: radial-gradient(hsl(var(--border)) 0.7px, transparent 0.7px);
+    background-size: 16px 16px;
   }
 }

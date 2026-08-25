@@ -1,3 +1,5 @@
+import json
+
 from app.core.network import PinnedHTTPResponse
 from app.db.models import AssetKind
 from app.recon.modules import builtin
@@ -67,8 +69,8 @@ def test_javascript_analysis_extracts_endpoints_without_retaining_source(monkeyp
         if asset.kind == AssetKind.endpoint.value
     }
     assert endpoint_values == {
-        "GET https://api.example.com/graphql?operation=viewer",
-        "GET https://app.example.com/api/v1/users?role=admin",
+        "GET https://api.example.com/graphql",
+        "GET https://app.example.com/api/v1/users",
     }
     assert {asset.value for asset in result.assets if asset.kind == "parameter"} == {
         "operation",
@@ -76,3 +78,65 @@ def test_javascript_analysis_extracts_endpoints_without_retaining_source(monkeyp
     }
     assert result.metadata["potential_secret_patterns"] == 1
     assert result.raw_output is None
+
+
+def test_certificate_transparency_paginates_until_empty(monkeypatch):
+    calls: list[str | None] = []
+    pages = {
+        None: [{"id": 10, "dns_names": ["api.example.com", "*.wild.example.com"]}],
+        "10": [{"id": 20, "dns_names": ["api.example.com", "admin.example.com"]}],
+        "20": [],
+    }
+
+    class FakeResponse:
+        def __init__(self, records):
+            self.payload = json.dumps(records).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        def iter_bytes(self):
+            yield self.payload
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def stream(self, _method, _endpoint, *, params, timeout):
+            assert timeout > 0
+            cursor = params.get("after")
+            calls.append(cursor)
+            return FakeResponse(pages[cursor])
+
+    monkeypatch.setattr(builtin.httpx, "Client", FakeClient)
+
+    result = builtin.CertificateTransparencyModule().execute(
+        _context("domain", "example.com", {"max_pages": 5})
+    )
+
+    assert calls == [None, "10", "20"]
+    assert {asset.value for asset in result.assets} == {
+        "admin.example.com",
+        "api.example.com",
+        "wild.example.com",
+    }
+    assert result.metadata == {
+        "certificate_names": 3,
+        "issuances_processed": 2,
+        "pages_fetched": 3,
+        "pagination_truncated": False,
+        "last_cursor": "20",
+    }

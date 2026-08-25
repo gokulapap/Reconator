@@ -16,7 +16,9 @@ function readInitial(): Theme {
   try {
     const v = localStorage.getItem(STORAGE_KEY);
     if (v === "light" || v === "dark") return v;
-  } catch {}
+  } catch {
+    // Fall back to the system preference when storage is unavailable.
+  }
   return window.matchMedia("(prefers-color-scheme: light)").matches
     ? "light"
     : "dark";
@@ -30,7 +32,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     root.classList.toggle("dark", theme === "dark");
     try {
       localStorage.setItem(STORAGE_KEY, theme);
-    } catch {}
+    } catch {
+      // Theme changes remain usable even when storage is unavailable.
+    }
   }, [theme]);
 
   const value: ThemeContext = {

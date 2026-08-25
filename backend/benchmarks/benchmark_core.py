@@ -12,6 +12,7 @@ from app.db.base import Base
 from app.db.models import Target
 from app.recon.knowledge import KnowledgeStore
 from app.recon.modules.base import AssetEmission
+from app.recon.modules.toolbox import _json_lines
 from app.recon.normalization import normalize_asset
 
 
@@ -68,12 +69,40 @@ def benchmark_persistence(count: int = 10_000) -> dict[str, float | int]:
     }
 
 
+def benchmark_toolbox_jsonl(count: int = 20_000) -> dict[str, float | int]:
+    output = "\n".join(
+        json.dumps(
+            {
+                "url": f"https://api-{index % 2_000}.example.com/v1/users?id={index}",
+                "source": "benchmark",
+                "status_code": 200,
+            },
+            separators=(",", ":"),
+        )
+        for index in range(count)
+    )
+    tracemalloc.start()
+    started = time.perf_counter()
+    records, rejected = _json_lines(output, limit=count)
+    duration = time.perf_counter() - started
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    return {
+        "records": len(records),
+        "rejected": rejected,
+        "seconds": round(duration, 4),
+        "records_per_second": round(len(records) / duration, 2),
+        "peak_memory_mib": round(peak / 1024 / 1024, 2),
+    }
+
+
 def main() -> None:
     print(
         json.dumps(
             {
                 "normalization": benchmark_normalization(),
                 "sqlite_persistence": benchmark_persistence(),
+                "toolbox_jsonl": benchmark_toolbox_jsonl(),
             },
             indent=2,
             sort_keys=True,
