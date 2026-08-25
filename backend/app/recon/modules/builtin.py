@@ -7,7 +7,8 @@ import shlex
 import socket
 import time
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlsplit
+from typing import Any
+from urllib.parse import urlencode, urljoin, urlsplit
 
 import httpx
 
@@ -29,8 +30,54 @@ from app.recon.modules.base import (
     RelationshipEmission,
 )
 from app.recon.modules.command import CommandModule, CommandSpec
+from app.recon.modules.openapi import OpenAPIParseError, parse_openapi_document
 from app.recon.modules.registry import ModuleRegistry, registry
 from app.recon.normalization import NormalizationError, NormalizedAsset, normalize_asset
+
+_OPENAPI_DOCUMENT_NAMES = frozenset(
+    {
+        "openapi.json",
+        "openapi.yaml",
+        "openapi.yml",
+        "swagger.json",
+        "swagger.yaml",
+        "swagger.yml",
+        "api-docs",
+    }
+)
+_OPENAPI_STRUCTURED_MEDIA_TYPES = frozenset(
+    {
+        "application/json",
+        "application/yaml",
+        "application/x-yaml",
+        "text/json",
+        "text/yaml",
+        "text/x-yaml",
+    }
+)
+_OPENAPI_JSON_MARKER = re.compile(r'(?:"openapi"\s*:\s*"3\.|"swagger"\s*:\s*"2\.0)')
+_OPENAPI_YAML_MARKER = re.compile(
+    r"(?m)^\s{0,3}(?:openapi\s*:\s*['\"]?3\.|swagger\s*:\s*['\"]?2\.0)"
+)
+
+_RIPESTAT_CALLS = {
+    "network-info": (
+        "https://stat.ripe.net/data/network-info/data.json",
+        "1.1",
+        256_000,
+    ),
+    "announced-prefixes": (
+        "https://stat.ripe.net/data/announced-prefixes/data.json",
+        "1.2",
+        4_000_000,
+    ),
+}
+_RIPESTAT_TIMEOUT_SECONDS = 15
+_RIPESTAT_MAX_ANNOUNCERS = 16
+_RIPESTAT_DEFAULT_PREFIX_LIMIT = 2_000
+_RIPESTAT_HARD_PREFIX_LIMIT = 10_000
+_RIPESTAT_MAX_RESPONSE_PREFIXES = 20_000
+_RIPESTAT_MAX_RESPONSE_TIMELINES = 100_000
 
 
 class _SurfaceHTMLParser(HTMLParser):
@@ -536,6 +583,453 @@ class RDAPIPModule:
         )
 
 
+def _ripestat_url(data_call: str, resource: str) -> str:
+    """Build one of the two allowed RIPEstat URLs from a canonical resource."""
+
+    try:
+        endpoint, version, _max_response_bytes = _RIPESTAT_CALLS[data_call]
+    except KeyError as exc:  # The data call is a module constant, never operator input.
+        raise ValueError("unsupported RIPEstat data call") from exc
+    try:
+        if data_call == "network-info":
+            canonical = ipaddress.ip_address(resource).compressed
+        else:
+            canonical = normalize_asset(
+                AssetKind.autonomous_system, resource
+            ).canonical_value
+    except (NormalizationError, ValueError) as exc:
+        raise ValueError("invalid RIPEstat resource") from exc
+    if canonical != resource:
+        raise ValueError("RIPEstat resource must be canonical")
+    query = urlencode(
+        (("resource", canonical), ("preferred_version", version)),
+        encoding="ascii",
+        errors="strict",
+    )
+    return f"{endpoint}?{query}"
+
+
+def _ripestat_retryable_status(status_code: int) -> bool:
+    return status_code in {408, 425, 429} or status_code >= 500
+
+
+def _ripestat_error(
+    detail: str,
+    *,
+    code: str = "ripestat_schema_error",
+    retryable: bool = False,
+) -> ModuleExecutionError:
+    return ModuleExecutionError(
+        f"RIPEstat response rejected: {detail}",
+        code=code,
+        retryable=retryable,
+    )
+
+
+def _request_ripestat(
+    context: ModuleContext,
+    *,
+    data_call: str,
+    resource: str,
+) -> dict[str, Any]:
+    endpoint = _ripestat_url(data_call, resource)
+    _base_url, expected_version, max_response_bytes = _RIPESTAT_CALLS[data_call]
+    try:
+        response = pinned_http_request(
+            endpoint,
+            timeout=min(context.timeout_seconds, _RIPESTAT_TIMEOUT_SECONDS),
+            max_response_bytes=max_response_bytes,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "Reconator/2 RIPEstat-passive-BGP",
+            },
+            max_redirects=0,
+        )
+    except UnsafeDestinationError as exc:
+        raise ModuleExecutionError(
+            f"RIPEstat destination rejected: {exc}",
+            code="ripestat_destination_error",
+            retryable=False,
+        ) from exc
+    except PinnedHTTPRequestError as exc:
+        response_too_large = "response exceeded" in str(exc).lower()
+        raise ModuleExecutionError(
+            f"RIPEstat request failed: {exc}",
+            code=(
+                "ripestat_response_too_large"
+                if response_too_large
+                else "ripestat_transport_error"
+            ),
+            retryable=not response_too_large,
+        ) from exc
+
+    if response.status_code != 200:
+        raise ModuleExecutionError(
+            f"RIPEstat returned HTTP {response.status_code}",
+            code="ripestat_http_error",
+            retryable=_ripestat_retryable_status(response.status_code),
+        )
+    media_type = response.headers.get("content-type", "").partition(";")[0].strip().lower()
+    if media_type != "application/json":
+        raise _ripestat_error("content type is not application/json")
+    try:
+        payload = json.loads(response.body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise _ripestat_error("body is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise _ripestat_error("top-level value is not an object")
+
+    status = payload.get("status")
+    status_code = payload.get("status_code")
+    if status != "ok" or status_code != 200:
+        embedded_status = status_code if isinstance(status_code, int) else 0
+        raise _ripestat_error(
+            "API status is not successful",
+            code="ripestat_api_error",
+            retryable=status == "maintenance"
+            or _ripestat_retryable_status(embedded_status),
+        )
+    if payload.get("data_call_name") != data_call:
+        raise _ripestat_error("data_call_name does not match the requested endpoint")
+    if payload.get("data_call_status") != "supported":
+        raise _ripestat_error("data call is not marked supported")
+    version = payload.get("version")
+    expected_major = expected_version.partition(".")[0]
+    if not isinstance(version, str) or version.partition(".")[0] != expected_major:
+        raise _ripestat_error("response version is incompatible")
+    if not isinstance(payload.get("data"), dict):
+        raise _ripestat_error("data is not an object")
+    if "cached" in payload and not isinstance(payload["cached"], bool):
+        raise _ripestat_error("cached flag is not a boolean")
+    return payload
+
+
+def _ripestat_provenance(
+    payload: dict[str, Any], *, data_call: str, resource: str
+) -> dict[str, Any]:
+    return {
+        "provider": "RIPE NCC RIPEstat",
+        "routing_dataset": "RIPE RIS",
+        "data_call": data_call,
+        "query_resource": resource,
+        "response_version": payload["version"],
+    }
+
+
+def _ripestat_prefix_limit(context: ModuleContext) -> int:
+    configured = context.config.get("max_prefixes", _RIPESTAT_DEFAULT_PREFIX_LIMIT)
+    if isinstance(configured, bool) or not isinstance(configured, int) or configured < 1:
+        raise ModuleExecutionError(
+            "RIPEstat max_prefixes must be a positive integer",
+            code="ripestat_invalid_config",
+            retryable=False,
+        )
+    return min(configured, _RIPESTAT_HARD_PREFIX_LIMIT)
+
+
+class RIPEstatNetworkInfoModule:
+    manifest = ModuleManifest(
+        name="infrastructure.ripestat_network_info",
+        version="1",
+        description="Map a public IP to its RIPE RIS routed prefix and announcing ASNs",
+        capability="infrastructure.bgp_network_info",
+        consumes=frozenset({AssetKind.ip_address.value}),
+        produces=frozenset(
+            {AssetKind.cidr.value, AssetKind.autonomous_system.value}
+        ),
+        mode=ModuleMode.passive,
+        default_profiles=frozenset({"passive", "balanced", "active"}),
+        priority=85,
+        timeout_seconds=20,
+        max_attempts=3,
+        cache_ttl_seconds=28_800,
+        rate_limit_per_second=0.5,
+        accepts_derived_inputs=True,
+        implementation="ripestat-network-info",
+    )
+
+    def execute(self, context: ModuleContext) -> ModuleResult:
+        address = ipaddress.ip_address(context.input_asset.canonical_value)
+        if not address.is_global:
+            return ModuleResult(
+                metadata={
+                    "provider": "RIPE NCC RIPEstat",
+                    "data_call": "network-info",
+                    "skipped": "non-public address",
+                }
+            )
+
+        resource = address.compressed
+        payload = _request_ripestat(
+            context,
+            data_call="network-info",
+            resource=resource,
+        )
+        data = payload["data"]
+        prefix_value = data.get("prefix")
+        asn_values = data.get("asns")
+        if not isinstance(asn_values, list):
+            raise _ripestat_error("network-info asns is not a list")
+        if len(asn_values) > _RIPESTAT_MAX_ANNOUNCERS:
+            raise _ripestat_error(
+                "network-info announcer count exceeds the safety limit",
+                code="ripestat_item_limit",
+            )
+        if prefix_value is None:
+            if asn_values:
+                raise _ripestat_error("an unrouted response contains announcing ASNs")
+            return ModuleResult(
+                metadata={
+                    "provider": "RIPE NCC RIPEstat",
+                    "data_call": "network-info",
+                    "response_version": payload["version"],
+                    "api_cached": payload.get("cached"),
+                    "routed": False,
+                    "announcers": 0,
+                }
+            )
+        if not isinstance(prefix_value, str):
+            raise _ripestat_error("network-info prefix is not a string or null")
+        try:
+            network = ipaddress.ip_network(prefix_value, strict=False)
+        except ValueError as exc:
+            raise _ripestat_error("network-info prefix is invalid") from exc
+        if address not in network:
+            raise _ripestat_error("network-info prefix does not contain the query address")
+        if not asn_values:
+            raise _ripestat_error("a routed prefix has no announcing ASN")
+
+        asns: list[str] = []
+        seen_asns: set[str] = set()
+        for asn_value in asn_values:
+            if isinstance(asn_value, bool) or not isinstance(asn_value, (int, str)):
+                raise _ripestat_error("network-info contains an invalid ASN value")
+            try:
+                asn = normalize_asset(
+                    AssetKind.autonomous_system, str(asn_value)
+                ).canonical_value
+            except NormalizationError as exc:
+                raise _ripestat_error("network-info contains an invalid ASN") from exc
+            if asn not in seen_asns:
+                seen_asns.add(asn)
+                asns.append(asn)
+
+        cidr = network.with_prefixlen
+        provenance = _ripestat_provenance(
+            payload,
+            data_call="network-info",
+            resource=resource,
+        )
+        intelligence_attributes = {
+            "intelligence_only": True,
+            "routing_source": "RIPE RIS",
+        }
+        assets = [
+            AssetEmission(
+                AssetKind.cidr.value,
+                cidr,
+                intelligence_attributes,
+                evidence=provenance,
+                source_name="ripestat",
+            )
+        ]
+        assets.extend(
+            AssetEmission(
+                AssetKind.autonomous_system.value,
+                asn,
+                intelligence_attributes,
+                evidence=provenance,
+                source_name="ripestat",
+            )
+            for asn in asns
+        )
+        relationships = [
+            RelationshipEmission(
+                AssetReference(AssetKind.ip_address.value, resource),
+                AssetReference(AssetKind.cidr.value, cidr),
+                "member_of_prefix",
+                evidence=provenance,
+            )
+        ]
+        relationships.extend(
+            RelationshipEmission(
+                AssetReference(AssetKind.cidr.value, cidr),
+                AssetReference(AssetKind.autonomous_system.value, asn),
+                "announced_by",
+                evidence=provenance,
+            )
+            for asn in asns
+        )
+        return ModuleResult(
+            assets=assets,
+            relationships=relationships,
+            metadata={
+                "provider": "RIPE NCC RIPEstat",
+                "data_call": "network-info",
+                "response_version": payload["version"],
+                "api_cached": payload.get("cached"),
+                "routed": True,
+                "announcers": len(asns),
+            },
+        )
+
+
+class RIPEstatAnnouncedPrefixesModule:
+    manifest = ModuleManifest(
+        name="infrastructure.ripestat_announced_prefixes",
+        version="1",
+        description="Collect bounded RIPE RIS announced-prefix intelligence for an ASN",
+        capability="infrastructure.bgp_announced_prefixes",
+        consumes=frozenset({AssetKind.autonomous_system.value}),
+        produces=frozenset({AssetKind.cidr.value}),
+        mode=ModuleMode.passive,
+        default_profiles=frozenset({"passive", "balanced", "active"}),
+        priority=82,
+        timeout_seconds=20,
+        max_attempts=3,
+        cache_ttl_seconds=21_600,
+        rate_limit_per_second=0.5,
+        accepts_derived_inputs=True,
+        implementation="ripestat-announced-prefixes",
+    )
+
+    def execute(self, context: ModuleContext) -> ModuleResult:
+        resource = normalize_asset(
+            AssetKind.autonomous_system,
+            context.input_asset.canonical_value,
+        ).canonical_value
+        prefix_limit = _ripestat_prefix_limit(context)
+        payload = _request_ripestat(
+            context,
+            data_call="announced-prefixes",
+            resource=resource,
+        )
+        data = payload["data"]
+        response_resource = data.get("resource")
+        if isinstance(response_resource, bool) or not isinstance(
+            response_resource, (int, str)
+        ):
+            raise _ripestat_error("announced-prefixes resource is invalid")
+        try:
+            canonical_response_resource = normalize_asset(
+                AssetKind.autonomous_system, str(response_resource)
+            ).canonical_value
+        except NormalizationError as exc:
+            raise _ripestat_error("announced-prefixes resource is invalid") from exc
+        if canonical_response_resource != resource:
+            raise _ripestat_error("announced-prefixes resource does not match the query")
+
+        prefix_items = data.get("prefixes")
+        if not isinstance(prefix_items, list):
+            raise _ripestat_error("announced-prefixes prefixes is not a list")
+        if len(prefix_items) > _RIPESTAT_MAX_RESPONSE_PREFIXES:
+            raise _ripestat_error(
+                "announced-prefixes response exceeds the item safety limit",
+                code="ripestat_item_limit",
+            )
+        query_start = data.get("query_starttime")
+        query_end = data.get("query_endtime")
+        if (
+            not isinstance(query_start, str)
+            or not isinstance(query_end, str)
+            or not 1 <= len(query_start) <= 128
+            or not 1 <= len(query_end) <= 128
+        ):
+            raise _ripestat_error("announced-prefixes query window is invalid")
+
+        prefixes: list[str] = []
+        seen_prefixes: set[str] = set()
+        timeline_count = 0
+        for item in prefix_items:
+            if not isinstance(item, dict) or not isinstance(item.get("prefix"), str):
+                raise _ripestat_error("announced-prefixes contains an invalid prefix entry")
+            timelines = item.get("timelines")
+            if not isinstance(timelines, list):
+                raise _ripestat_error("announced-prefixes timelines is not a list")
+            timeline_count += len(timelines)
+            if timeline_count > _RIPESTAT_MAX_RESPONSE_TIMELINES:
+                raise _ripestat_error(
+                    "announced-prefixes timeline count exceeds the safety limit",
+                    code="ripestat_item_limit",
+                )
+            for timeline in timelines:
+                if not isinstance(timeline, dict):
+                    raise _ripestat_error("announced-prefixes contains an invalid timeline")
+                start = timeline.get("starttime")
+                end = timeline.get("endtime")
+                if (
+                    not isinstance(start, str)
+                    or not isinstance(end, str)
+                    or not 1 <= len(start) <= 128
+                    or not 1 <= len(end) <= 128
+                ):
+                    raise _ripestat_error("announced-prefixes timeline window is invalid")
+            try:
+                prefix = ipaddress.ip_network(
+                    item["prefix"], strict=False
+                ).with_prefixlen
+            except ValueError as exc:
+                raise _ripestat_error(
+                    "announced-prefixes contains an invalid prefix"
+                ) from exc
+            if prefix in seen_prefixes:
+                continue
+            seen_prefixes.add(prefix)
+            if len(prefixes) < prefix_limit:
+                prefixes.append(prefix)
+
+        provenance = _ripestat_provenance(
+            payload,
+            data_call="announced-prefixes",
+            resource=resource,
+        )
+        relationship_attributes = {
+            "observation_window_start": query_start,
+            "observation_window_end": query_end,
+        }
+        intelligence_attributes = {
+            "intelligence_only": True,
+            "routing_source": "RIPE RIS",
+        }
+        assets = [
+            AssetEmission(
+                AssetKind.cidr.value,
+                prefix,
+                intelligence_attributes,
+                evidence=provenance,
+                source_name="ripestat",
+            )
+            for prefix in prefixes
+        ]
+        relationships = [
+            RelationshipEmission(
+                AssetReference(AssetKind.cidr.value, prefix),
+                AssetReference(AssetKind.autonomous_system.value, resource),
+                "announced_by",
+                attributes=relationship_attributes,
+                evidence=provenance,
+            )
+            for prefix in prefixes
+        ]
+        return ModuleResult(
+            assets=assets,
+            relationships=relationships,
+            metadata={
+                "provider": "RIPE NCC RIPEstat",
+                "data_call": "announced-prefixes",
+                "response_version": payload["version"],
+                "api_cached": payload.get("cached"),
+                "query_starttime": query_start,
+                "query_endtime": query_end,
+                "prefixes_returned": len(prefix_items),
+                "prefixes_unique": len(seen_prefixes),
+                "prefixes_emitted": len(prefixes),
+                "prefixes_truncated": len(seen_prefixes) > len(prefixes),
+                "prefix_limit": prefix_limit,
+            },
+        )
+
+
 class URLStructureModule:
     manifest = ModuleManifest(
         name="url.structure",
@@ -985,6 +1479,43 @@ class TCPConnectModule:
         )
 
 
+def _detect_openapi_document(
+    url: str,
+    content_type: str,
+    decoded_body: str,
+) -> tuple[bool, tuple[str, ...]]:
+    """Identify strong OpenAPI signals without parsing or making another request."""
+
+    media_type = content_type.partition(";")[0].strip().lower()
+    path = urlsplit(url).path.lower().rstrip("/")
+    filename = path.rsplit("/", 1)[-1]
+    path_hint = filename in _OPENAPI_DOCUMENT_NAMES or path.endswith(
+        ("/v2/api-docs", "/v3/api-docs")
+    )
+    vendor_content_type = "openapi" in media_type or "swagger" in media_type
+    structured_content_type = (
+        media_type in _OPENAPI_STRUCTURED_MEDIA_TYPES
+        or media_type.endswith("+json")
+        or media_type.endswith("+yaml")
+    )
+    snippet = decoded_body[:65_536].lstrip("\ufeff \t\r\n")
+    body_marker = bool(
+        (snippet.startswith("{") and _OPENAPI_JSON_MARKER.search(snippet))
+        or _OPENAPI_YAML_MARKER.search(snippet)
+    )
+    signals: list[str] = []
+    if vendor_content_type:
+        signals.append("vendor_content_type")
+    if path_hint:
+        signals.append("document_path")
+    if structured_content_type:
+        signals.append("structured_content_type")
+    if body_marker:
+        signals.append("document_body_marker")
+    detected = vendor_content_type or body_marker or (path_hint and structured_content_type)
+    return detected, tuple(signals)
+
+
 class HTTPProbeModule:
     manifest = ModuleManifest(
         name="http.probe",
@@ -1000,6 +1531,9 @@ class HTTPProbeModule:
                 AssetKind.endpoint.value,
                 AssetKind.parameter.value,
                 AssetKind.javascript.value,
+                "auth_scheme",
+                "callback",
+                "webhook",
             }
         ),
         mode=ModuleMode.active,
@@ -1134,15 +1668,38 @@ class HTTPProbeModule:
                     )
                 )
 
+        metadata: dict[str, Any] = {
+            "status_code": response.status_code,
+            "body_bytes_captured": len(response.body),
+            "body_truncated": response.truncated,
+            "openapi_parse_status": "not_detected",
+            "openapi_parse_error_code": None,
+        }
+        detected, detection_signals = _detect_openapi_document(final_url, content_type, decoded)
+        metadata["openapi_detection_signals"] = list(detection_signals)
+        if detected and response.truncated:
+            metadata["openapi_parse_status"] = "skipped_truncated"
+            metadata["openapi_parse_error_code"] = "response_truncated"
+        elif detected:
+            try:
+                openapi_result = parse_openapi_document(final_url, decoded)
+            except OpenAPIParseError:
+                metadata["openapi_parse_status"] = "rejected"
+                metadata["openapi_parse_error_code"] = "invalid_openapi_document"
+            except Exception:  # Parser isolation: untrusted documents cannot fail HTTP probing.
+                metadata["openapi_parse_status"] = "error"
+                metadata["openapi_parse_error_code"] = "openapi_parser_error"
+            else:
+                assets.extend(openapi_result.assets)
+                relationships.extend(openapi_result.relationships)
+                metadata["openapi_parse_status"] = "parsed"
+                metadata["openapi"] = openapi_result.metadata
+
         return ModuleResult(
             assets=assets,
             relationships=relationships,
             raw_output=decoded,
-            metadata={
-                "status_code": response.status_code,
-                "body_bytes_captured": len(response.body),
-                "body_truncated": response.truncated,
-            },
+            metadata=metadata,
         )
 
 
@@ -1178,6 +1735,8 @@ def register_builtin_modules(module_registry: ModuleRegistry = registry) -> None
         TCPConnectModule(),
         CIDRExpansionModule(),
         RDAPIPModule(),
+        RIPEstatNetworkInfoModule(),
+        RIPEstatAnnouncedPrefixesModule(),
         URLStructureModule(),
         *toolbox_modules(),
     ]

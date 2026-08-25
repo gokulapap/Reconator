@@ -17,6 +17,11 @@ Do not place provider keys in scan configuration, task data, or images. Subfinde
 all configured providers by default and records per-host and per-task provider evidence;
 disable `all_sources` per module only for an intentionally lower-cost pass.
 
+DNSX active validation is bounded in the toolbox and uses automatic wildcard
+filtering. Tune its module-level concurrency/QPS conservatively for the authorized
+program; the broker clamps all values even when scan configuration is malformed.
+The toolbox health response includes the pinned DNSX version and binary digest.
+
 ## Scaling workers
 
 Set `WORKER_REPLICAS` or run:

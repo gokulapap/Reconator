@@ -80,6 +80,151 @@ def test_javascript_analysis_extracts_endpoints_without_retaining_source(monkeyp
     assert result.raw_output is None
 
 
+def test_http_probe_reuses_fetched_openapi_body_for_graph_intelligence():
+    body = json.dumps(
+        {
+            "openapi": "3.0.3",
+            "info": {"title": "fixture", "version": "1"},
+            "paths": {
+                "/users/{id}": {
+                    "get": {
+                        "parameters": [
+                            {
+                                "name": "id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                }
+            },
+        }
+    ).encode()
+    response = PinnedHTTPResponse(
+        status_code=200,
+        reason="OK",
+        headers={"content-type": "application/json; charset=utf-8"},
+        body=body,
+        url="https://api.example.invalid/openapi.json",
+        resolved_addresses=("192.0.2.10",),
+    )
+
+    result = builtin.HTTPProbeModule._result(
+        _context("url", "https://api.example.invalid/openapi.json"), response
+    )
+
+    assert "GET https://api.example.invalid/users/%7Bid%7D" in {
+        asset.value for asset in result.assets if asset.kind == AssetKind.endpoint.value
+    }
+    assert "path:id" in {
+        asset.value for asset in result.assets if asset.kind == AssetKind.parameter.value
+    }
+    assert result.metadata["openapi_parse_status"] == "parsed"
+    assert result.metadata["openapi_parse_error_code"] is None
+    assert result.metadata["openapi"]["network_requests"] == 0
+    assert result.metadata["openapi"]["operations_processed"] == 1
+    assert set(result.metadata["openapi_detection_signals"]) == {
+        "document_path",
+        "structured_content_type",
+        "document_body_marker",
+    }
+    assert {"auth_scheme", "callback", "webhook"} <= builtin.HTTPProbeModule.manifest.produces
+
+
+def test_http_probe_does_not_parse_unmarked_json():
+    response = PinnedHTTPResponse(
+        status_code=200,
+        reason="OK",
+        headers={"content-type": "application/json"},
+        body=b'{"items": [1, 2, 3]}',
+        url="https://api.example.invalid/data.json",
+        resolved_addresses=("192.0.2.10",),
+    )
+
+    result = builtin.HTTPProbeModule._result(
+        _context("url", "https://api.example.invalid/data.json"), response
+    )
+
+    assert result.metadata["openapi_parse_status"] == "not_detected"
+    assert result.metadata["openapi_parse_error_code"] is None
+    assert not [asset for asset in result.assets if asset.kind == AssetKind.endpoint.value]
+
+
+def test_http_probe_keeps_invalid_openapi_parse_failure_non_fatal():
+    response = PinnedHTTPResponse(
+        status_code=200,
+        reason="OK",
+        headers={"content-type": "application/json"},
+        body=b'{"openapi": "3.0.3", "paths": ',
+        url="https://api.example.invalid/openapi.json",
+        resolved_addresses=("192.0.2.10",),
+    )
+
+    result = builtin.HTTPProbeModule._result(
+        _context("url", "https://api.example.invalid/openapi.json"), response
+    )
+
+    assert result.metadata["openapi_parse_status"] == "rejected"
+    assert result.metadata["openapi_parse_error_code"] == "invalid_openapi_document"
+    assert [asset.kind for asset in result.assets] == [AssetKind.url.value]
+
+
+def test_http_probe_does_not_ingest_a_truncated_openapi_document():
+    response = PinnedHTTPResponse(
+        status_code=200,
+        reason="OK",
+        headers={"content-type": "application/vnd.oai.openapi+json"},
+        body=b'{"openapi": "3.0.3"',
+        url="https://api.example.invalid/spec",
+        resolved_addresses=("192.0.2.10",),
+        truncated=True,
+    )
+
+    result = builtin.HTTPProbeModule._result(
+        _context("url", "https://api.example.invalid/spec"), response
+    )
+
+    assert result.metadata["openapi_parse_status"] == "skipped_truncated"
+    assert result.metadata["openapi_parse_error_code"] == "response_truncated"
+    assert [asset.kind for asset in result.assets] == [AssetKind.url.value]
+
+
+def test_http_probe_isolates_unexpected_openapi_parser_failures(monkeypatch):
+    response = PinnedHTTPResponse(
+        status_code=200,
+        reason="OK",
+        headers={"content-type": "application/vnd.oai.openapi+yaml"},
+        body=b"openapi: 3.0.3\npaths: {}\n",
+        url="https://api.example.invalid/spec",
+        resolved_addresses=("192.0.2.10",),
+    )
+
+    def fail_parser(*_args, **_kwargs):
+        raise RuntimeError("isolated parser failure")
+
+    monkeypatch.setattr(builtin, "parse_openapi_document", fail_parser)
+    result = builtin.HTTPProbeModule._result(
+        _context("url", "https://api.example.invalid/spec"), response
+    )
+
+    assert result.metadata["openapi_parse_status"] == "error"
+    assert result.metadata["openapi_parse_error_code"] == "openapi_parser_error"
+    assert [asset.kind for asset in result.assets] == [AssetKind.url.value]
+
+
+def test_http_probe_detects_root_yaml_marker_without_relying_on_a_filename():
+    detected, signals = builtin._detect_openapi_document(
+        "https://api.example.invalid/specification",
+        "text/plain",
+        "openapi: 3.1.0\ninfo: {title: fixture, version: '1'}\npaths: {}\n",
+    )
+
+    assert detected is True
+    assert signals == ("document_body_marker",)
+
+
 def test_certificate_transparency_paginates_until_empty(monkeypatch):
     calls: list[str | None] = []
     pages = {

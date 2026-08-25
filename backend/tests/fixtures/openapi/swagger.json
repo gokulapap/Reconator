@@ -1,0 +1,28 @@
+{
+  "swagger": "2.0",
+  "info": {"title": "Legacy fixture", "version": "1.0"},
+  "host": "legacy.api.example.invalid",
+  "basePath": "/v2",
+  "schemes": ["https"],
+  "security": [{"apiKey": []}],
+  "paths": {
+    "/pets": {
+      "get": {
+        "operationId": "listPets",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 100,
+            "x-example-api-key": "do-not-store-this-key"
+          }
+        ],
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  },
+  "securityDefinitions": {
+    "apiKey": {"type": "apiKey", "name": "X-API-Key", "in": "header"}
+  }
+}

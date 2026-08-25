@@ -263,6 +263,17 @@ export interface ScanKnowledgeSummary {
   source_yield?: SourceYield[];
   /** Additive in newer API versions; optional keeps rolling upgrades safe. */
   module_health?: ModuleHealth[];
+  /** Exact server-side scan aggregates; absent during a rolling API upgrade. */
+  completeness?: ScanCompleteness | null;
+}
+
+export interface ScanCompleteness {
+  tasks_inspected: number;
+  tasks_total: number;
+  truncated_tasks: number;
+  discovery_truncated_tasks: number;
+  evidence_truncated_tasks: number;
+  validation_rejections: number;
 }
 
 export interface SourceYield {
@@ -281,6 +292,11 @@ export interface ModuleHealth {
   tasks_total: number;
   tasks_by_status: Record<string, number>;
   failure_rate: number;
+  error_codes?: Record<string, number>;
+  duration_sample_size?: number;
+  duration_total?: number;
+  average_duration_seconds?: number | null;
+  p95_duration_seconds?: number | null;
 }
 
 export interface ReconTask {

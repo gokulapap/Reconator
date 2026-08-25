@@ -15,7 +15,11 @@ license texts are preserved in `/usr/share/licenses/reconator-toolbox` in the im
 | jsluice | 0ddfab153e060a9eeaded4d8669233f7c071e7e4 | https://github.com/BishopFox/jsluice | MIT |
 | AlterX | v0.1.0 | https://github.com/projectdiscovery/alterx | MIT |
 | CDNCheck | v1.2.50 | https://github.com/projectdiscovery/cdncheck | MIT |
+| DNSX | v1.3.0 | https://github.com/projectdiscovery/dnsx | MIT |
 
 Review each linked upstream license before redistributing a toolbox image. The
 version pins are intentionally explicit so dependency updates can be reviewed,
 rebuilt and regression-tested rather than changing at container start-up.
+Katana remains pinned to the upstream `v1.7.0` module source and is built with
+`github.com/jackc/pgx/v5` explicitly selected at `v5.10.0` to incorporate its
+security fixes.

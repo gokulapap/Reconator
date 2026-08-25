@@ -164,6 +164,16 @@ def test_modules(client):
     assert r.status_code == 200
     items = r.json()
     assert any(m["capability"] == "dns.resolve" for m in items)
+    assert all(
+        m["capability_policy"]
+        in {
+            "parallel_sources",
+            "preferred_then_fallback",
+            "sequential_enrichment",
+        }
+        for m in items
+    )
+    assert all(isinstance(m["implementation_priority"], int) for m in items)
 
 
 def test_authorization_confirmation_required(client):

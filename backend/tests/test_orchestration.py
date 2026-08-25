@@ -328,6 +328,23 @@ class CandidateValidator:
         return ModuleResult()
 
 
+class CandidateDNSXValidator:
+    manifest = ModuleManifest(
+        name="toolbox.dnsx",
+        version="test",
+        description="wildcard-aware candidate validator fixture",
+        capability="dns.resolve",
+        consumes=frozenset({"domain"}),
+        produces=frozenset({"domain"}),
+        mode=ModuleMode.active,
+        default_profiles=frozenset({"active"}),
+        cache_ttl_seconds=0,
+    )
+
+    def execute(self, context):
+        return ModuleResult()
+
+
 class CandidateDownstream:
     manifest = ModuleManifest(
         name="http.probe",
@@ -365,11 +382,12 @@ class OriginCrawler:
 def test_unvalidated_domain_hypothesis_only_schedules_dns_validation(db):
     module_registry = ModuleRegistry()
     module_registry.register(CandidateValidator())
+    module_registry.register(CandidateDNSXValidator())
     module_registry.register(CandidateDownstream())
     target = Target(
         url="example.com",
         profile="active",
-        selected_modules=["dns.system.a", "http.probe"],
+        selected_modules=["dns.system.a", "toolbox.dnsx", "http.probe"],
         authorization_confirmed=True,
     )
     db.add(target)
@@ -392,11 +410,15 @@ def test_unvalidated_domain_hypothesis_only_schedules_dns_validation(db):
     candidate_tasks = (
         db.query(ReconTask).filter(ReconTask.input_asset_id == candidate.asset.id).all()
     )
-    assert {task.module_name for task in candidate_tasks} == {"dns.system.a"}
+    assert {task.module_name for task in candidate_tasks} == {
+        "dns.system.a",
+        "toolbox.dnsx",
+    }
 
+    system_task = next(task for task in candidate_tasks if task.module_name == "dns.system.a")
     validated = scheduler.knowledge.observe_asset(
         target_id=target.id,
-        task_id=candidate_tasks[0].id,
+        task_id=system_task.id,
         module_name="dns.system.a",
         emission=AssetEmission(
             "domain",
@@ -406,12 +428,13 @@ def test_unvalidated_domain_hypothesis_only_schedules_dns_validation(db):
     )
     assert validated.changed is True
     assert validated.new_to_scan is False
-    scheduler.schedule_for_asset(target, validated, parent_task_id=candidate_tasks[0].id)
+    scheduler.schedule_for_asset(target, validated, parent_task_id=system_task.id)
     promoted_tasks = (
         db.query(ReconTask).filter(ReconTask.input_asset_id == candidate.asset.id).all()
     )
     assert {task.module_name for task in promoted_tasks} == {
         "dns.system.a",
+        "toolbox.dnsx",
         "http.probe",
     }
 

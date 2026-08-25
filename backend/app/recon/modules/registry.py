@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
+from dataclasses import dataclass
 from importlib.metadata import entry_points
 from threading import RLock
 
-from app.recon.modules.base import ReconModule
+from app.recon.modules.base import CapabilityExecutionPolicy, ReconModule
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityExecutionGroup:
+    capability: str
+    policy: CapabilityExecutionPolicy
+    modules: tuple[ReconModule, ...]
 
 
 class ModuleRegistry:
@@ -21,6 +30,23 @@ class ModuleRegistry:
         with self._lock:
             if manifest.name in self._modules and not replace:
                 raise ValueError(f"module already registered: {manifest.name}")
+            declared = {
+                candidate.manifest.capability_policy
+                for candidate in self._modules.values()
+                if candidate.manifest.capability == manifest.capability
+                and candidate.manifest.name != manifest.name
+                and candidate.manifest.capability_policy is not None
+            }
+            if (
+                manifest.capability_policy is not None
+                and declared
+                and manifest.capability_policy not in declared
+            ):
+                other = sorted(policy.value for policy in declared)
+                raise ValueError(
+                    f"capability {manifest.capability} declares conflicting execution "
+                    f"policies: {', '.join(other)}, {manifest.capability_policy.value}"
+                )
             self._modules[manifest.name] = module
 
     def get(self, name: str) -> ReconModule | None:
@@ -65,6 +91,62 @@ class ModuleRegistry:
                 continue
             candidates.append(module)
         return sorted(candidates, key=lambda item: (-item.manifest.priority, item.manifest.name))
+
+    @staticmethod
+    def execution_policy_for(
+        modules: list[ReconModule] | tuple[ReconModule, ...],
+    ) -> CapabilityExecutionPolicy:
+        declared = {
+            module.manifest.capability_policy
+            for module in modules
+            if module.manifest.capability_policy is not None
+        }
+        if not declared:
+            return CapabilityExecutionPolicy.parallel_sources
+        if len(declared) > 1:
+            policies = ", ".join(sorted(policy.value for policy in declared))
+            raise ValueError(f"conflicting capability execution policies: {policies}")
+        return declared.pop()
+
+    def policy_for_capability(self, capability: str) -> CapabilityExecutionPolicy:
+        with self._lock:
+            modules = tuple(
+                module
+                for module in self._modules.values()
+                if module.manifest.capability == capability
+            )
+        return self.execution_policy_for(modules)
+
+    def execution_groups(self, modules: list[ReconModule]) -> list[CapabilityExecutionGroup]:
+        grouped: dict[str, list[ReconModule]] = defaultdict(list)
+        for module in modules:
+            grouped[module.manifest.capability].append(module)
+        groups = []
+        for capability, implementations in grouped.items():
+            ordered = tuple(
+                sorted(
+                    implementations,
+                    key=lambda item: (
+                        -item.manifest.implementation_priority,
+                        -item.manifest.priority,
+                        item.manifest.name,
+                    ),
+                )
+            )
+            groups.append(
+                CapabilityExecutionGroup(
+                    capability=capability,
+                    policy=self.execution_policy_for(ordered),
+                    modules=ordered,
+                )
+            )
+        return sorted(
+            groups,
+            key=lambda group: (
+                -max(module.manifest.priority for module in group.modules),
+                group.capability,
+            ),
+        )
 
     def load_entry_points(self) -> None:
         for entry_point in entry_points(group="reconator.modules"):

@@ -318,6 +318,301 @@ class SubfinderModule(ToolboxModule):
         )
 
 
+def _dnsx_values(value: Any, *, limit: int = 500) -> list[Any]:
+    if isinstance(value, list):
+        return value[:limit]
+    if isinstance(value, (str, int, float, dict)):
+        return [value]
+    return []
+
+
+def _dnsx_domain_value(value: Any) -> tuple[str | None, int | None]:
+    preference: int | None = None
+    candidate: Any = value
+    if isinstance(value, dict):
+        candidate = (
+            value.get("host")
+            or value.get("name")
+            or value.get("exchange")
+            or value.get("target")
+            or value.get("value")
+        )
+        raw_preference = value.get("preference") or value.get("priority")
+        if isinstance(raw_preference, int) and 0 <= raw_preference <= 65_535:
+            preference = raw_preference
+    if not isinstance(candidate, str):
+        return None, preference
+    fields = candidate.strip().split()
+    if len(fields) > 1 and fields[0].isdigit():
+        preference = min(int(fields[0]), 65_535)
+        candidate = fields[-1]
+    try:
+        domain = normalize_asset(AssetKind.domain, candidate.rstrip(".")).canonical_value
+    except NormalizationError:
+        return None, preference
+    return domain, preference
+
+
+def _dnsx_evidence(record: dict[str, Any], record_type: str, answer: str) -> dict[str, Any]:
+    resolvers = _dnsx_values(record.get("resolver"), limit=10)
+    resolver_names = [str(item)[:128] for item in resolvers if isinstance(item, str)]
+    evidence: dict[str, Any] = {
+        "record_type": record_type,
+        "answer": answer[:4_096],
+        "status_code": str(record.get("status_code") or "NOERROR")[:32].upper(),
+        "wildcard_filter": "automatic",
+    }
+    if resolver_names:
+        evidence["resolvers"] = resolver_names
+    ttl = record.get("ttl")
+    if isinstance(ttl, int) and 0 <= ttl <= 4_294_967_295:
+        evidence["ttl"] = ttl
+    query_time = record.get("query-time") or record.get("query_time")
+    if isinstance(query_time, (int, float, str)):
+        evidence["query_time"] = str(query_time)[:64]
+    return evidence
+
+
+class DNSXModule(ToolboxModule):
+    tool = "dnsx"
+    manifest = ModuleManifest(
+        name="toolbox.dnsx",
+        version="1.3.0",
+        description=(
+            "Validate DNS names with bounded wildcard-aware A, AAAA, CNAME, NS, MX, "
+            "TXT and CAA queries"
+        ),
+        capability="dns.resolve",
+        consumes=frozenset({AssetKind.domain.value}),
+        produces=frozenset(
+            {
+                AssetKind.domain.value,
+                AssetKind.ip_address.value,
+                AssetKind.dns_record.value,
+            }
+        ),
+        mode=ModuleMode.active,
+        default_profiles=frozenset({"balanced", "active"}),
+        priority=150,
+        timeout_seconds=60,
+        max_attempts=2,
+        cache_ttl_seconds=3_600,
+        rate_limit_per_second=5,
+        implementation="isolated-toolbox:dnsx",
+    )
+
+    def execute(self, context: ModuleContext) -> ModuleResult:
+        execution = self._execute(context)
+        records, rejected = _json_lines(execution.stdout, limit=100)
+        input_domain = context.input_asset.canonical_value
+        source = _source_ref(context)
+        allow_private = context.config.get("allow_private_networks", False) is True
+        assets: list[AssetEmission] = []
+        relationships: list[RelationshipEmission] = []
+        seen_assets: set[tuple[str, str]] = set()
+        seen_relationships: set[tuple[str, str, str]] = set()
+        counts: dict[str, int] = {}
+        accepted_validation_answers = 0
+        private_answers_filtered = 0
+
+        def emit_asset(emission: AssetEmission) -> None:
+            key = (emission.kind, emission.value)
+            if key not in seen_assets:
+                seen_assets.add(key)
+                assets.append(emission)
+
+        def emit_relationship(emission: RelationshipEmission) -> None:
+            key = (
+                emission.target.kind,
+                emission.target.value,
+                emission.relationship_type,
+            )
+            if key not in seen_relationships:
+                seen_relationships.add(key)
+                relationships.append(emission)
+
+        for record in records:
+            try:
+                record_host = normalize_asset(
+                    AssetKind.domain, str(record.get("host", ""))
+                ).canonical_value
+            except NormalizationError:
+                rejected += 1
+                continue
+            if record_host != input_domain:
+                rejected += 1
+                continue
+            status_code = str(record.get("status_code") or "NOERROR").upper()
+            if status_code != "NOERROR":
+                continue
+
+            for record_type, field in (("A", "a"), ("AAAA", "aaaa")):
+                for raw_answer in _dnsx_values(record.get(field)):
+                    try:
+                        address = ipaddress.ip_address(str(raw_answer).strip()).compressed
+                    except ValueError:
+                        rejected += 1
+                        continue
+                    parsed_address = ipaddress.ip_address(address)
+                    if not allow_private and not parsed_address.is_global:
+                        private_answers_filtered += 1
+                        continue
+                    evidence = _dnsx_evidence(record, record_type, address)
+                    emit_asset(
+                        AssetEmission(
+                            AssetKind.ip_address.value,
+                            address,
+                            {"version": parsed_address.version, "record_type": record_type},
+                            evidence=evidence,
+                            source_name="dnsx",
+                        )
+                    )
+                    emit_relationship(
+                        RelationshipEmission(
+                            source,
+                            AssetReference(AssetKind.ip_address.value, address),
+                            "resolves_to",
+                            attributes={"record_type": record_type},
+                            evidence=evidence,
+                        )
+                    )
+                    counts[record_type] = counts.get(record_type, 0) + 1
+                    accepted_validation_answers += 1
+
+            for raw_answer in _dnsx_values(record.get("cname")):
+                cname, _preference = _dnsx_domain_value(raw_answer)
+                if cname is None:
+                    rejected += 1
+                    continue
+                if cname == input_domain:
+                    rejected += 1
+                    continue
+                evidence = _dnsx_evidence(record, "CNAME", cname)
+                emit_asset(
+                    AssetEmission(
+                        AssetKind.domain.value,
+                        cname,
+                        {"record_type": "CNAME"},
+                        evidence=evidence,
+                        source_name="dnsx",
+                    )
+                )
+                emit_relationship(
+                    RelationshipEmission(
+                        source,
+                        AssetReference(AssetKind.domain.value, cname),
+                        "aliases_to",
+                        attributes={"record_type": "CNAME"},
+                        evidence=evidence,
+                    )
+                )
+                counts["CNAME"] = counts.get("CNAME", 0) + 1
+                accepted_validation_answers += 1
+
+            for record_type, field, relationship_type in (
+                ("NS", "ns", "uses_nameserver"),
+                ("MX", "mx", "receives_mail_via"),
+            ):
+                for raw_answer in _dnsx_values(record.get(field)):
+                    domain, preference = _dnsx_domain_value(raw_answer)
+                    if domain is None:
+                        rejected += 1
+                        continue
+                    evidence = _dnsx_evidence(record, record_type, str(raw_answer))
+                    attributes: dict[str, Any] = {"record_type": record_type}
+                    if preference is not None and record_type == "MX":
+                        attributes["preference"] = preference
+                    if domain != input_domain:
+                        emit_asset(
+                            AssetEmission(
+                                AssetKind.domain.value,
+                                domain,
+                                attributes,
+                                evidence=evidence,
+                                source_name="dnsx",
+                            )
+                        )
+                        emit_relationship(
+                            RelationshipEmission(
+                                source,
+                                AssetReference(AssetKind.domain.value, domain),
+                                relationship_type,
+                                attributes=attributes,
+                                evidence=evidence,
+                            )
+                        )
+                    counts[record_type] = counts.get(record_type, 0) + 1
+
+            for record_type, field in (("TXT", "txt"), ("CAA", "caa")):
+                for raw_answer in _dnsx_values(record.get(field)):
+                    if isinstance(raw_answer, dict):
+                        answer = json.dumps(raw_answer, sort_keys=True, separators=(",", ":"))[
+                            :4_096
+                        ]
+                    else:
+                        answer = str(raw_answer).strip()[:4_096]
+                    if not answer:
+                        rejected += 1
+                        continue
+                    value = f"{record_type} {answer}"
+                    evidence = _dnsx_evidence(record, record_type, answer)
+                    emit_asset(
+                        AssetEmission(
+                            AssetKind.dns_record.value,
+                            value,
+                            {"record_type": record_type},
+                            evidence=evidence,
+                            source_name="dnsx",
+                        )
+                    )
+                    emit_relationship(
+                        RelationshipEmission(
+                            source,
+                            AssetReference(AssetKind.dns_record.value, value),
+                            "publishes_dns_record",
+                            attributes={"record_type": record_type},
+                            evidence=evidence,
+                        )
+                    )
+                    counts[record_type] = counts.get(record_type, 0) + 1
+
+        if accepted_validation_answers:
+            validation_evidence = {
+                "validation": "dnsx_wildcard_aware_resolution",
+                "accepted_answers": accepted_validation_answers,
+                "record_counts": dict(sorted(counts.items())),
+            }
+            seen_assets.discard((AssetKind.domain.value, input_domain))
+            assets = [
+                asset
+                for asset in assets
+                if not (asset.kind == AssetKind.domain.value and asset.value == input_domain)
+            ]
+            emit_asset(
+                AssetEmission(
+                    AssetKind.domain.value,
+                    input_domain,
+                    {"candidate": False, "validated": True, "dns_validated": True},
+                    evidence=validation_evidence,
+                    source_name="dnsx",
+                )
+            )
+
+        return ModuleResult(
+            assets=assets,
+            relationships=relationships,
+            raw_output=_sanitize_raw_output(execution.stdout),
+            metadata={
+                **_execution_metadata(execution, rejected),
+                "validated": accepted_validation_answers > 0,
+                "accepted_validation_answers": accepted_validation_answers,
+                "record_counts": dict(sorted(counts.items())),
+                "private_answers_filtered": private_answers_filtered,
+                "wildcard_filter": "automatic",
+            },
+        )
+
+
 class URLFinderModule(ToolboxModule):
     tool = "urlfinder"
     manifest = ModuleManifest(
@@ -1184,6 +1479,7 @@ class CDNCheckModule(ToolboxModule):
 def toolbox_modules() -> list[ToolboxModule]:
     return [
         SubfinderModule(),
+        DNSXModule(),
         URLFinderModule(),
         HTTPXModule(),
         KatanaModule(),

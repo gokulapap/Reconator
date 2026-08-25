@@ -110,6 +110,61 @@ describe("ResultQuality", () => {
     expect(screen.getByText(/first 2 of 600 tasks/)).toBeInTheDocument();
   });
 
+  it("prefers exact server completeness and shows zero yield, latency, and error groups", () => {
+    render(
+      <ResultQuality
+        summary={{
+          ...summary,
+          completeness: {
+            tasks_inspected: 600,
+            tasks_total: 600,
+            truncated_tasks: 3,
+            discovery_truncated_tasks: 2,
+            evidence_truncated_tasks: 3,
+            validation_rejections: 7,
+          },
+          source_yield: [
+            ...(summary.source_yield ?? []),
+            {
+              source_module: "builtin.empty-provider",
+              source_name: null,
+              observations: 0,
+              distinct_assets: 0,
+              exclusive_assets: 0,
+              average_confidence: 0,
+              last_observed_at: null,
+            },
+          ],
+          module_health: [
+            {
+              ...(summary.module_health?.[0] as NonNullable<ScanKnowledgeSummary["module_health"]>[number]),
+              error_codes: { provider_timeout: 2 },
+              duration_sample_size: 40,
+              duration_total: 50,
+              average_duration_seconds: 1.5,
+              p95_duration_seconds: 4,
+            },
+          ],
+        }}
+        taskSample={taskSample}
+        loading={false}
+      />,
+    );
+
+    expect(screen.getByText("600/600 tasks aggregated")).toBeInTheDocument();
+    expect(screen.getByText(/Exact scan totals/)).toBeInTheDocument();
+    expect(screen.getByText("2 task(s)").closest("li")).toHaveTextContent(
+      /bounded pagination/,
+    );
+    expect(screen.getByText("7 malformed emission(s)")).toBeInTheDocument();
+    expect(screen.getByText(/3 unique task\(s\)/)).toBeInTheDocument();
+    expect(screen.getByText("completed module · zero persisted yield")).toBeInTheDocument();
+    expect(screen.getByText("1.5s / 4.0s")).toBeInTheDocument();
+    expect(screen.getByText("40/50 timings")).toBeInTheDocument();
+    expect(screen.getByText("provider_timeout ×2")).toBeInTheDocument();
+    expect(screen.queryByText(/first 2 of 600 tasks/)).not.toBeInTheDocument();
+  });
+
   it("distinguishes a live empty scan from missing result quality", () => {
     render(
       <ResultQuality

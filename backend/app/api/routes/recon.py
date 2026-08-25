@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import math
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import Text, cast, func, or_, select
+from sqlalchemy import Text, case, cast, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -35,6 +37,7 @@ from app.schemas.recon import (
     ScanKnowledgeSummary,
     ScopeRuleCreate,
     ScopeRuleRead,
+    ScanCompleteness,
     SourceYield,
     TaskDetail,
     TaskList,
@@ -42,6 +45,32 @@ from app.schemas.recon import (
 )
 
 router = APIRouter(tags=["recon-knowledge"], dependencies=[Depends(require_read_api_key)])
+
+_DISCOVERY_BOUND_KEYS = (
+    "pagination_truncated",
+    "source_truncated",
+    "body_truncated",
+    "stdout_truncated",
+    "stderr_truncated",
+)
+_EVIDENCE_BOUND_KEYS = (
+    "raw_output_truncated",
+    "raw_output_scan_budget_exhausted",
+)
+_DURATION_SAMPLE_PER_MODULE = 500
+_DURATION_SAMPLE_LIMIT = 20_000
+
+
+def _task_summary_flag(key: str):
+    return ReconTask.output_summary[key].as_boolean().is_(True)
+
+
+def _nearest_rank_percentile(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = max(math.ceil(percentile * len(ordered)) - 1, 0)
+    return ordered[index]
 
 
 def _target_or_404(db: Session, target_id: int) -> Target:
@@ -214,6 +243,23 @@ def scan_knowledge_summary(
         .where(ReconTask.target_id == target_id)
         .group_by(ReconTask.status)
     ).all()
+    discovery_bound = or_(*[_task_summary_flag(key) for key in _DISCOVERY_BOUND_KEYS])
+    evidence_bound = or_(*[_task_summary_flag(key) for key in _EVIDENCE_BOUND_KEYS])
+    quality_row = db.execute(
+        select(
+            func.count(ReconTask.id),
+            func.coalesce(
+                func.sum(case((or_(discovery_bound, evidence_bound), 1), else_=0)),
+                0,
+            ),
+            func.coalesce(func.sum(case((discovery_bound, 1), else_=0)), 0),
+            func.coalesce(func.sum(case((evidence_bound, 1), else_=0)), 0),
+            func.coalesce(
+                func.sum(ReconTask.output_summary["validation_error_count"].as_integer()),
+                0,
+            ),
+        ).where(ReconTask.target_id == target_id)
+    ).one()
     module_rows = db.execute(
         select(AssetObservation.source_module, func.count())
         .where(AssetObservation.target_id == target_id)
@@ -272,10 +318,60 @@ def scan_knowledge_summary(
             ReconTask.module_name,
             ReconTask.capability,
             ReconTask.status,
+            ReconTask.error_code,
             func.count(),
         )
         .where(ReconTask.target_id == target_id)
-        .group_by(ReconTask.module_name, ReconTask.capability, ReconTask.status)
+        .group_by(
+            ReconTask.module_name,
+            ReconTask.capability,
+            ReconTask.status,
+            ReconTask.error_code,
+        )
+    ).all()
+    duration_total_rows = db.execute(
+        select(ReconTask.module_name, ReconTask.capability, func.count())
+        .where(
+            ReconTask.target_id == target_id,
+            ReconTask.started_at.isnot(None),
+            ReconTask.completed_at.isnot(None),
+        )
+        .group_by(ReconTask.module_name, ReconTask.capability)
+    ).all()
+    duration_ranked = (
+        select(
+            ReconTask.module_name.label("module_name"),
+            ReconTask.capability.label("capability"),
+            ReconTask.started_at.label("started_at"),
+            ReconTask.completed_at.label("completed_at"),
+            func.row_number()
+            .over(
+                partition_by=(ReconTask.module_name, ReconTask.capability),
+                order_by=(ReconTask.completed_at.desc(), ReconTask.id.desc()),
+            )
+            .label("sample_rank"),
+        )
+        .where(
+            ReconTask.target_id == target_id,
+            ReconTask.started_at.isnot(None),
+            ReconTask.completed_at.isnot(None),
+        )
+        .subquery()
+    )
+    duration_rows = db.execute(
+        select(
+            duration_ranked.c.module_name,
+            duration_ranked.c.capability,
+            duration_ranked.c.started_at,
+            duration_ranked.c.completed_at,
+        )
+        .where(duration_ranked.c.sample_rank <= _DURATION_SAMPLE_PER_MODULE)
+        .order_by(
+            duration_ranked.c.module_name,
+            duration_ranked.c.capability,
+            duration_ranked.c.completed_at.desc(),
+        )
+        .limit(_DURATION_SAMPLE_LIMIT)
     ).all()
     assets_by_kind = {kind: int(count) for kind, count in asset_rows}
     relationships_by_type = {
@@ -306,12 +402,46 @@ def scan_knowledge_summary(
         key=lambda item: (-item.distinct_assets, item.source_module, item.source_name or ""),
     )
     module_statuses: dict[tuple[str, str], dict[str, int]] = {}
-    for module_name, capability, task_status, count in task_module_rows:
+    module_error_codes: dict[tuple[str, str], dict[str, int]] = {}
+    for module_name, capability, task_status, error_code, count in task_module_rows:
         module_statuses.setdefault((module_name, capability), {})[task_status] = int(count)
+        if error_code:
+            module_error_codes.setdefault((module_name, capability), {})[error_code] = (
+                module_error_codes.get((module_name, capability), {}).get(error_code, 0)
+                + int(count)
+            )
+    observed_modules = {item.source_module for item in source_yield}
+    for (module_name, _capability), statuses in module_statuses.items():
+        if statuses.get("completed", 0) > 0 and module_name not in observed_modules:
+            source_yield.append(
+                SourceYield(
+                    source_module=module_name,
+                    source_name=None,
+                    observations=0,
+                    distinct_assets=0,
+                    exclusive_assets=0,
+                    average_confidence=0,
+                    last_observed_at=None,
+                )
+            )
+    source_yield.sort(
+        key=lambda item: (-item.distinct_assets, item.source_module, item.source_name or "")
+    )
+    duration_totals = {
+        (module_name, capability): int(count)
+        for module_name, capability, count in duration_total_rows
+    }
+    duration_samples: dict[tuple[str, str], list[float]] = {}
+    for module_name, capability, started_at, completed_at in duration_rows:
+        duration_seconds = (completed_at - started_at).total_seconds()
+        if duration_seconds >= 0:
+            duration_samples.setdefault((module_name, capability), []).append(duration_seconds)
     module_health = []
     for (module_name, capability), statuses in module_statuses.items():
         tasks_total = sum(statuses.values())
         completed_attempts = statuses.get("completed", 0) + statuses.get("failed", 0)
+        durations = duration_samples.get((module_name, capability), [])
+        duration_p95 = _nearest_rank_percentile(durations, 0.95)
         module_health.append(
             ModuleHealth(
                 module_name=module_name,
@@ -320,6 +450,17 @@ def scan_knowledge_summary(
                 tasks_by_status=statuses,
                 failure_rate=(
                     statuses.get("failed", 0) / completed_attempts if completed_attempts else 0
+                ),
+                error_codes=dict(
+                    sorted(module_error_codes.get((module_name, capability), {}).items())
+                ),
+                duration_sample_size=len(durations),
+                duration_total=duration_totals.get((module_name, capability), 0),
+                average_duration_seconds=(
+                    round(sum(durations) / len(durations), 3) if durations else None
+                ),
+                p95_duration_seconds=(
+                    round(duration_p95, 3) if duration_p95 is not None else None
                 ),
             )
         )
@@ -335,6 +476,14 @@ def scan_knowledge_summary(
         observations_by_module=observations_by_module,
         source_yield=source_yield,
         module_health=module_health,
+        completeness=ScanCompleteness(
+            tasks_inspected=int(quality_row[0] or 0),
+            tasks_total=int(quality_row[0] or 0),
+            truncated_tasks=int(quality_row[1] or 0),
+            discovery_truncated_tasks=int(quality_row[2] or 0),
+            evidence_truncated_tasks=int(quality_row[3] or 0),
+            validation_rejections=int(quality_row[4] or 0),
+        ),
     )
 
 

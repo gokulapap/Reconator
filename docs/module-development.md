@@ -9,6 +9,7 @@ from app.db.models import AssetKind
 from app.recon.modules.base import (
     AssetEmission,
     AssetReference,
+    CapabilityExecutionPolicy,
     ModuleContext,
     ModuleManifest,
     ModuleMode,
@@ -92,6 +93,44 @@ Do not perform I/O in `accepts`; it runs during scheduling.
 The module receives only its effective configuration in `context.config`. Define conservative defaults in code, validate every value, cap list sizes/ranges/timeouts again inside the module, and ignore unknown values only when doing so is safe.
 
 Configuration is included in task/cache identity, so a meaningful configuration change creates new work.
+
+## Multiple implementations of one capability
+
+The default is `parallel_sources`: every selected implementation is independent and
+may run concurrently. This is appropriate when sources are complementary and merging
+their observations improves coverage.
+
+An implementation may declare a capability-wide policy when running every adapter is
+redundant or when ordering is semantically required:
+
+```python
+manifest = ModuleManifest(
+    # ...
+    capability="http.probe",
+    capability_policy=CapabilityExecutionPolicy.preferred_then_fallback,
+    implementation_priority=200,
+)
+```
+
+- `preferred_then_fallback` tries implementations from highest
+  `implementation_priority` to lowest. The next task is activated only after the
+  preceding implementation permanently fails or is unavailable. A successful or
+  cache-replayed implementation suppresses the remaining fallbacks.
+- `sequential_enrichment` runs every implementation in the same deterministic order.
+  A permanent predecessor failure suppresses later enrichment because their ordering
+  contract can no longer be satisfied.
+- `parallel_sources` preserves the ordinary independent-source behavior.
+
+When priorities tie, task priority and then stable module name determine order. Only
+one implementation needs to declare the capability policy; any other explicit
+declarations must agree. A conflicting plugin is rejected during registration.
+
+Policy gates are persisted as task dependencies and protected scheduler metadata, so
+worker restarts, retry waits, expired leases, cache hits, and horizontal workers cannot
+bypass the ordering. Downstream `depends_on_capabilities` tasks wait on the terminal
+policy task: a failed preferred implementation followed by a successful fallback
+satisfies the capability dependency without treating the expected first failure as a
+failed capability.
 
 ## Command-backed tools
 

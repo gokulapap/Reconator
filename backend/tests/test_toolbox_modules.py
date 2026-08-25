@@ -10,6 +10,7 @@ from app.recon.modules.base import ModuleContext, ModuleExecutionError
 from app.recon.modules.toolbox import (
     AlterXModule,
     CDNCheckModule,
+    DNSXModule,
     HTTPXModule,
     JSLuiceModule,
     KatanaModule,
@@ -82,6 +83,112 @@ def test_subfinder_preserves_sources_and_filters_unrelated_domains():
         "duplicate": 1,
     }
     assert result.relationships[0].relationship_type == "has_subdomain"
+
+
+def test_dnsx_promotes_only_answered_names_and_preserves_record_evidence():
+    module = DNSXModule()
+    result_data = execution(
+        "dnsx",
+        [
+            {
+                "host": "candidate.authorized.invalid",
+                "status_code": "NOERROR",
+                "ttl": 300,
+                "resolver": ["1.1.1.1:53"],
+                "query-time": "12ms",
+                "a": ["8.8.8.8", "10.0.0.5", "not-an-address"],
+                "aaaa": ["2606:4700:4700::1111"],
+                "cname": ["edge.authorized.invalid."],
+                "ns": ["ns1.authorized.invalid."],
+                "mx": ["10 mail.authorized.invalid."],
+                "txt": ["v=spf1 -all"],
+                "caa": [{"flag": 0, "tag": "issue", "value": "ca.invalid"}],
+            },
+            {
+                "host": "poisoned.invalid",
+                "status_code": "NOERROR",
+                "a": ["9.9.9.9"],
+            },
+        ],
+    )
+    with patch.object(module, "_execute", return_value=result_data):
+        result = module.execute(context(AssetKind.domain.value, "candidate.authorized.invalid"))
+
+    identities = {(asset.kind, asset.value) for asset in result.assets}
+    assert ("ip_address", "8.8.8.8") in identities
+    assert ("ip_address", "2606:4700:4700::1111") in identities
+    assert ("ip_address", "10.0.0.5") not in identities
+    assert ("domain", "edge.authorized.invalid") in identities
+    assert ("dns_record", "TXT v=spf1 -all") in identities
+    promoted = next(
+        asset
+        for asset in result.assets
+        if asset.kind == "domain" and asset.value == "candidate.authorized.invalid"
+    )
+    assert promoted.attributes["validated"] is True
+    assert promoted.source_name == "dnsx"
+    address = next(asset for asset in result.assets if asset.value == "8.8.8.8")
+    assert address.evidence["resolvers"] == ["1.1.1.1:53"]
+    assert address.evidence["wildcard_filter"] == "automatic"
+    assert result.metadata["private_answers_filtered"] == 1
+    assert result.metadata["rejected_output_records"] == 2
+    assert {relationship.relationship_type for relationship in result.relationships} >= {
+        "resolves_to",
+        "aliases_to",
+        "uses_nameserver",
+        "receives_mail_via",
+        "publishes_dns_record",
+    }
+
+
+def test_dnsx_does_not_promote_nodata_or_unsafe_private_only_answers():
+    module = DNSXModule()
+    result_data = execution(
+        "dnsx",
+        [
+            {
+                "host": "candidate.authorized.invalid",
+                "status_code": "NOERROR",
+                "a": ["10.0.0.5"],
+            },
+            {
+                "host": "candidate.authorized.invalid",
+                "status_code": "NXDOMAIN",
+                "a": ["8.8.8.8"],
+            },
+        ],
+    )
+    with patch.object(module, "_execute", return_value=result_data):
+        result = module.execute(context(AssetKind.domain.value, "candidate.authorized.invalid"))
+
+    assert result.metadata["validated"] is False
+    assert result.metadata["private_answers_filtered"] == 1
+    assert not result.assets
+
+
+def test_dnsx_private_answers_require_explicit_module_authorization():
+    module = DNSXModule()
+    result_data = execution(
+        "dnsx",
+        [
+            {
+                "host": "internal.authorized.invalid",
+                "status_code": "NOERROR",
+                "a": ["10.0.0.5"],
+            }
+        ],
+    )
+    with patch.object(module, "_execute", return_value=result_data):
+        result = module.execute(
+            context(
+                AssetKind.domain.value,
+                "internal.authorized.invalid",
+                {"allow_private_networks": True},
+            )
+        )
+
+    assert result.metadata["validated"] is True
+    assert any(asset.value == "10.0.0.5" for asset in result.assets)
 
 
 def test_urlfinder_distinguishes_javascript_and_keeps_source_provenance():

@@ -45,7 +45,7 @@ hop outside scope, but they must not silently authorize active interaction.
 | Authorization | exact/wildcard domains, URLs, IP/CIDR, exclusions, direct vs derived | every task receives a scope decision | implemented centrally |
 | Organization intelligence | legal names, brands, acquisitions, ASNs, repositories, package namespaces | organization → domain/ASN/repository | model ready; providers deferred |
 | Passive domain discovery | CT, passive DNS, provider APIs, search datasets | domain → subdomain → DNS/HTTP | paginated CertSpotter + all configured Subfinder sources, with merged provider counts |
-| Active DNS discovery | wordlists, learned mutations, wildcard and poisoning validation, common SRV records | validated name → address/CNAME/service | DNS records + bounded AlterX candidates; bulk validation remains |
+| Active DNS discovery | wordlists, learned mutations, wildcard and poisoning validation, common SRV records | validated name → address/CNAME/service | wildcard-aware DNSX records + bounded AlterX candidates; wordlist-scale validation remains |
 | Certificate intelligence | CT, live TLS SANs, issuer, fingerprint and reuse clusters | certificate ↔ domains ↔ live services | CT + httpx TLS graph |
 | Network ownership | RDAP, ASN, BGP prefixes, reverse DNS, internet indexes | IP → ASN/org/CIDR → passive services | RDAP/PTR + httpx ASN; BGP providers remain |
 | Edge classification | CDN, cloud, WAF and shared hosting ranges | IP/CNAME → provider → scan-safety decision | CDNCheck + httpx attribution |
@@ -69,6 +69,7 @@ The initial isolated toolbox intentionally chooses orthogonal implementations:
 | Implementation | Why selected | Interaction | Default use |
 | --- | --- | --- | --- |
 | Subfinder 2.16.0 | maintained passive-source aggregation, JSONL and per-source quotas/provenance; all configured sources enabled by default | passive | all profiles |
+| DNSX 1.3.0 | maintained JSONL DNS validation with automatic wildcard filtering and structured resolver/record evidence | active | balanced/active |
 | URLFinder 0.0.3 | curated historical URL sources with source-bearing JSONL | passive | all profiles |
 | httpx 1.10.0 | rich HTTP/TLS/ASN/CDN/technology output complementary to the strict built-in probe | active | balanced/active |
 | Katana 1.7.0 | bounded standard crawling, JavaScript parsing and known-file discovery | active | active only |
@@ -88,9 +89,9 @@ payload and process counts are bounded.
   framework inside Reconator would duplicate orchestration and obscure
   provenance. Prefer direct providers or narrow adapters where they add unique
   observations.
-- **PureDNS/MassDNS:** valuable for high-volume validated brute force and wildcard
-  control. It needs resolver health management, batching and program-wide DNS
-  budgets before safe default integration.
+- **PureDNS/MassDNS:** valuable as the next wordlist-scale validation stage beyond
+  single-candidate DNSX. It needs resolver health management, chunk checkpoints,
+  and program-wide DNS budgets before safe default integration.
 - **Kiterunner:** materially useful for method/header/body-aware API routes, but
   the route dataset is large and high-request. Integrate only with explicit
   per-program budgets and contextual triggering.
@@ -163,6 +164,7 @@ automated:
 - [reconFTW](https://github.com/six2dez/reconftw)
 - [ProjectDiscovery open-source documentation](https://docs.projectdiscovery.io/opensource)
 - [Subfinder usage](https://docs.projectdiscovery.io/opensource/subfinder/usage)
+- [DNSX usage and wildcard filtering](https://github.com/projectdiscovery/dnsx)
 - [httpx usage](https://docs.projectdiscovery.io/opensource/httpx/usage)
 - [Katana usage and scope controls](https://docs.projectdiscovery.io/opensource/katana/usage)
 - [OWASP PureDNS wildcard and validation methodology](https://github.com/d3mondev/puredns)

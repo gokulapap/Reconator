@@ -21,6 +21,8 @@ class ModuleInfo(BaseModel):
     cache_ttl_seconds: int
     accepts_derived_inputs: bool
     depends_on_capabilities: list[str]
+    capability_policy: str
+    implementation_priority: int
     available: bool
 
 
@@ -42,6 +44,8 @@ def list_modules() -> list[ModuleInfo]:
             cache_ttl_seconds=m.manifest.cache_ttl_seconds,
             accepts_derived_inputs=m.manifest.accepts_derived_inputs,
             depends_on_capabilities=sorted(m.manifest.depends_on_capabilities),
+            capability_policy=registry.policy_for_capability(m.manifest.capability).value,
+            implementation_priority=m.manifest.implementation_priority,
             available=registry.is_available(m),
         )
         for m in registry.all()

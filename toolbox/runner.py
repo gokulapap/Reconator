@@ -44,6 +44,7 @@ TOOL_VERSIONS = {
     "jsluice": "0ddfab153e060a9eeaded4d8669233f7c071e7e4",
     "alterx": "v0.1.0",
     "cdncheck": "v1.2.50",
+    "dnsx": "v1.3.0",
 }
 
 
@@ -282,6 +283,40 @@ def build_command(request: dict[str, Any], *, workdir: str) -> tuple[str, list[s
         if config.get("all_sources", True) is not False:
             argv.append("-all")
         _provider_config(argv, "subfinder", "-provider-config")
+        return tool, argv, timeout
+
+    if tool == "dnsx":
+        target = _domain(request.get("input"))
+        input_path = Path(workdir) / "dns-targets.txt"
+        input_path.write_text(f"{target}\n", encoding="utf-8")
+        argv = [
+            "dnsx",
+            "-list",
+            str(input_path),
+            "-a",
+            "-aaaa",
+            "-cname",
+            "-ns",
+            "-mx",
+            "-txt",
+            "-caa",
+            "-json",
+            "-omit-raw",
+            "-silent",
+            "-no-color",
+            "-disable-update-check",
+            "-auto-wildcard",
+            "-wildcard-threshold",
+            str(_bounded_int(config, "wildcard_threshold", 5, 2, 20)),
+            "-threads",
+            str(_bounded_int(config, "concurrency", 25, 1, 100)),
+            "-rate-limit",
+            str(_bounded_int(config, "rate_limit", 100, 1, 500)),
+            "-timeout",
+            f"{_bounded_int(config, 'request_timeout_seconds', 3, 1, 15)}s",
+            "-retry",
+            str(_bounded_int(config, "retries", 2, 1, 4)),
+        ]
         return tool, argv, timeout
 
     if tool == "urlfinder":

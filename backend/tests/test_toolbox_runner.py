@@ -119,6 +119,51 @@ def test_subfinder_all_sources_can_be_disabled_for_low_cost_runs():
     assert "-all" not in argv
 
 
+def test_dnsx_runner_is_file_bounded_wildcard_aware_and_noninteractive():
+    with tempfile.TemporaryDirectory() as workdir:
+        _, argv, timeout = runner.build_command(
+            {
+                "tool": "dnsx",
+                "input": "candidate.authorized.invalid",
+                "config": {
+                    "concurrency": 99_999,
+                    "rate_limit": 99_999,
+                    "request_timeout_seconds": 99,
+                    "retries": 99,
+                    "wildcard_threshold": 99,
+                    "execution_timeout": 99_999,
+                },
+            },
+            workdir=workdir,
+        )
+        input_path = Path(argv[argv.index("-list") + 1])
+        assert input_path.parent == Path(workdir)
+        assert input_path.read_text() == "candidate.authorized.invalid\n"
+
+    assert timeout == runner.MAX_TIMEOUT_SECONDS
+    assert argv[argv.index("-threads") + 1] == "100"
+    assert argv[argv.index("-rate-limit") + 1] == "500"
+    assert argv[argv.index("-timeout") + 1] == "15s"
+    assert argv[argv.index("-retry") + 1] == "4"
+    assert argv[argv.index("-wildcard-threshold") + 1] == "20"
+    assert {"-a", "-aaaa", "-cname", "-ns", "-mx", "-txt", "-caa"} <= set(argv)
+    assert "-auto-wildcard" in argv
+    assert "-json" in argv
+    assert "-omit-raw" in argv
+    assert "-disable-update-check" in argv
+
+
+def test_dnsx_runner_rejects_injected_or_non_domain_input():
+    with (
+        tempfile.TemporaryDirectory() as workdir,
+        pytest.raises(runner.RequestError),
+    ):
+        runner.build_command(
+            {"tool": "dnsx", "input": "authorized.invalid;id", "config": {}},
+            workdir=workdir,
+        )
+
+
 def test_naabu_runner_requires_explicit_private_network_authorization():
     with tempfile.TemporaryDirectory() as workdir:
         with pytest.raises(runner.RequestError):

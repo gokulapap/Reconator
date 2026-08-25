@@ -11,7 +11,7 @@ Reconator runs each check as a separate task. A new result can start more useful
 Reconator can:
 
 - Find subdomains with Subfinder and the public certificate log service Cert Spotter.
-- Read A, AAAA, CNAME, NS, MX, TXT, and PTR DNS records.
+- Check names with DNSX. It removes false results caused by catch-all DNS and reads A, AAAA, CNAME, NS, MX, TXT, CAA, and PTR records.
 - Find old URLs with URLFinder.
 - Check web servers with HTTPX and Reconator's built-in HTTP check.
 - Record status codes, page titles, redirects, website certificate details, technologies, hosting network details, and network owner details when a tool returns them.
@@ -181,7 +181,7 @@ docker compose up -d --scale worker=4
 
 More workers do not remove the scan limits. `MAX_CONCURRENT_TASKS`, `MAX_CONCURRENT_TASKS_PER_TARGET`, and tool limits still control load. Start with small values and raise them only after watching the target and your machine.
 
-The toolbox image includes fixed versions of Subfinder, URLFinder, HTTPX, Katana, Naabu, JSLuice, AlterX, and CDNCheck. The toolbox runs without root access, has a read-only file system, has no host port, and cannot reach the database network. Tool output is treated as unsafe input and is checked by the worker.
+The toolbox image includes fixed versions of Subfinder, DNSX, URLFinder, HTTPX, Katana, Naabu, JSLuice, AlterX, and CDNCheck. The toolbox runs without root access, has a read-only file system, has no host port, and cannot reach the database network. Tool output is treated as unsafe input and is checked by the worker.
 
 ## Common settings
 

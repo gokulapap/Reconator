@@ -34,6 +34,7 @@ from app.recon.knowledge import KnowledgeStore, ObservedAsset, utcnow
 from app.recon.modules.base import (
     AssetEmission,
     AssetReference,
+    CapabilityExecutionPolicy,
     ModuleContext,
     ModuleExecutionError,
     ModuleMode,
@@ -54,7 +55,9 @@ _ALL_TERMINAL = _SUCCESS_TERMINAL | {
     TaskStatus.failed.value,
     TaskStatus.cancelled.value,
 }
-_CANDIDATE_VALIDATORS = {"dns.system.a", "dns.system.aaaa"}
+_CANDIDATE_VALIDATORS = {"dns.system.a", "dns.system.aaaa", "toolbox.dnsx"}
+_POLICY_CONFIG_KEY = "_reconator_capability_policy"
+_CACHE_REPLAYED_KEY = "_reconator_cache_replayed"
 
 
 class TaskScheduler:
@@ -69,6 +72,7 @@ class TaskScheduler:
         defaults = scan_config.get("defaults", {})
         module_configs = scan_config.get("modules", {})
         config = {**defaults, **module_configs.get(module_name, {})}
+        config = {key: value for key, value in config.items() if not key.startswith("_reconator_")}
         config["allow_private_networks"] = bool(
             settings.allow_private_targets and config.get("allow_private_networks", False)
         )
@@ -305,28 +309,123 @@ class TaskScheduler:
                 continue
             remaining_capacity -= 1
             scheduled.append(task)
-            event_type = "task.cache_hit" if cached else "task.queued"
+        self._attach_dependencies(target, observed.asset.id, scheduled)
+        self._apply_capability_policies(scheduled)
+        for task in scheduled:
+            self._record_scheduled_task(target, observed.asset, task)
+        for task in scheduled:
+            if self._replay_ready_cache_hit(target, task):
+                self._unblock_dependents(task.id)
+        return scheduled
+
+    def _record_scheduled_task(self, target: Target, asset: Asset, task: ReconTask) -> None:
+        policy = self._policy_metadata(task)
+        if task.cache_hit_task_id and task.status == TaskStatus.skipped.value:
+            event_type = "task.cache_hit"
+            message = f"Reused cached result for {task.module_name}"
+            task_cache_hits_total.labels(module=task.module_name).inc()
+        elif policy and task.status == TaskStatus.blocked.value:
+            event_type = "task.policy_wait"
+            message = f"Deferred {task.module_name} by capability execution policy"
+        elif task.status == TaskStatus.skipped.value:
+            event_type = "task.dependency_wait"
+            message = task.error_detail or f"Skipped {task.module_name}"
+        else:
+            event_type = "task.queued"
+            message = f"Queued {task.module_name} for {asset.canonical_value}"
+        self.knowledge.record_event(
+            target_id=target.id,
+            task_id=task.id,
+            event_type=event_type,
+            level="warning" if task.error_code else "info",
+            message=message,
+            data={
+                "module": task.module_name,
+                "capability": task.capability,
+                "asset_id": asset.id,
+                "cache_hit_task_id": task.cache_hit_task_id,
+                "capability_policy": (policy.get("policy") if policy else "parallel_sources"),
+                "implementation_position": policy.get("position") if policy else None,
+            },
+        )
+
+    @staticmethod
+    def _policy_metadata(task: ReconTask) -> dict[str, Any]:
+        metadata = (task.config or {}).get(_POLICY_CONFIG_KEY)
+        return metadata if isinstance(metadata, dict) else {}
+
+    def _apply_capability_policies(self, tasks: list[ReconTask]) -> None:
+        modules = [
+            module for task in tasks if (module := self.registry.get(task.module_name)) is not None
+        ]
+        task_by_module = {task.module_name: task for task in tasks}
+        for group in self.registry.execution_groups(modules):
+            if group.policy == CapabilityExecutionPolicy.parallel_sources or len(group.modules) < 2:
+                continue
+            ordered_tasks = [task_by_module[module.manifest.name] for module in group.modules]
+            for position, task in enumerate(ordered_tasks):
+                predecessor_id = ordered_tasks[position - 1].id if position else None
+                config = dict(task.config or {})
+                config[_POLICY_CONFIG_KEY] = {
+                    "policy": group.policy.value,
+                    "position": position,
+                    "size": len(ordered_tasks),
+                    "predecessor_task_id": predecessor_id,
+                    "base_status": task.status,
+                    "base_error_code": task.error_code,
+                    "base_error_detail": task.error_detail,
+                }
+                task.config = config
+                if predecessor_id is None:
+                    continue
+                self.db.add(TaskDependency(task_id=task.id, depends_on_id=predecessor_id))
+                task.status = TaskStatus.blocked.value
+                task.completed_at = None
+                task.error_code = None
+                task.error_detail = None
+
+    def _replay_ready_cache_hit(self, target: Target, task: ReconTask) -> bool:
+        if (
+            task.cache_hit_task_id is None
+            or task.status != TaskStatus.skipped.value
+            or task.error_code is not None
+            or (task.config or {}).get(_CACHE_REPLAYED_KEY) is True
+        ):
+            return False
+        cached = self.db.get(ReconTask, task.cache_hit_task_id)
+        if cached is None:
+            task.cache_hit_task_id = None
+            task.status = TaskStatus.queued.value
+            task.completed_at = None
+            return False
+        config = dict(task.config or {})
+        config[_CACHE_REPLAYED_KEY] = True
+        task.config = config
+        self._replay_cached_assets(target, task, cached)
+        policy = self._policy_metadata(task)
+        if policy.get("position", 0) > 0:
+            task_cache_hits_total.labels(module=task.module_name).inc()
             self.knowledge.record_event(
                 target_id=target.id,
                 task_id=task.id,
-                event_type=event_type,
-                message=(
-                    f"Reused cached result for {manifest.name}"
-                    if cached
-                    else f"Queued {manifest.name} for {observed.asset.canonical_value}"
-                ),
+                event_type="task.cache_hit",
+                message=f"Activated cached result for {task.module_name}",
                 data={
-                    "module": manifest.name,
-                    "capability": manifest.capability,
-                    "asset_id": observed.asset.id,
-                    "cache_hit_task_id": cached.id if cached else None,
+                    "module": task.module_name,
+                    "capability": task.capability,
+                    "cache_hit_task_id": cached.id,
+                    "capability_policy": policy.get("policy"),
+                    "implementation_position": policy.get("position"),
                 },
             )
-            if cached:
-                task_cache_hits_total.labels(module=manifest.name).inc()
-                self._replay_cached_assets(target, task, cached)
-        self._attach_dependencies(target, observed.asset.id, scheduled)
-        return scheduled
+        return True
+
+    @staticmethod
+    def _discard_unused_cache_hit(task: ReconTask) -> None:
+        if task.cache_hit_task_id is None or (task.config or {}).get(_CACHE_REPLAYED_KEY) is True:
+            return
+        task.cache_hit_task_id = None
+        task.output_summary = {}
 
     def _attach_dependencies(
         self, target: Target, input_asset_id: int, tasks: list[ReconTask]
@@ -358,18 +457,48 @@ class TaskScheduler:
                     f"required capabilities were not scheduled: {', '.join(missing)}"
                 )
             else:
-                for predecessor in predecessors:
+                selected_predecessors: list[ReconTask] = []
+                for capability in sorted(required):
+                    capability_tasks = [
+                        predecessor
+                        for predecessor in predecessors
+                        if predecessor.capability == capability
+                    ]
+                    capability_modules = [
+                        module
+                        for predecessor in capability_tasks
+                        if (module := self.registry.get(predecessor.module_name)) is not None
+                    ]
+                    policy = self.registry.execution_policy_for(capability_modules)
+                    if (
+                        policy == CapabilityExecutionPolicy.parallel_sources
+                        or len(capability_tasks) < 2
+                    ):
+                        selected_predecessors.extend(capability_tasks)
+                        continue
+                    ordered_names = [
+                        module.manifest.name
+                        for group in self.registry.execution_groups(capability_modules)
+                        for module in group.modules
+                    ]
+                    by_name = {
+                        predecessor.module_name: predecessor for predecessor in capability_tasks
+                    }
+                    selected_predecessors.append(by_name[ordered_names[-1]])
+                for predecessor in selected_predecessors:
                     self.db.add(TaskDependency(task_id=task.id, depends_on_id=predecessor.id))
                 if any(
-                    predecessor.status in {TaskStatus.failed.value, TaskStatus.cancelled.value}
-                    for predecessor in predecessors
+                    predecessor.status in _ALL_TERMINAL
+                    and not self._is_successful_terminal(predecessor)
+                    for predecessor in selected_predecessors
                 ):
                     task.status = TaskStatus.skipped.value
                     task.completed_at = utcnow()
                     task.error_code = "dependency_failed"
                     task.error_detail = "a required predecessor did not complete successfully"
                 elif any(
-                    predecessor.status not in _SUCCESS_TERMINAL for predecessor in predecessors
+                    predecessor.status not in _SUCCESS_TERMINAL
+                    for predecessor in selected_predecessors
                 ):
                     task.status = TaskStatus.blocked.value
             if task.status != TaskStatus.queued.value:
@@ -427,6 +556,134 @@ class TaskScheduler:
                 ),
             )
 
+    @staticmethod
+    def _is_successful_terminal(task: ReconTask) -> bool:
+        return bool(
+            task.status == TaskStatus.completed.value
+            or (
+                task.status == TaskStatus.skipped.value
+                and (
+                    (task.cache_hit_task_id is not None and task.error_code is None)
+                    or task.error_code == "fallback_not_required"
+                )
+            )
+        )
+
+    def _dependency_tasks(self, task_id: int) -> list[ReconTask]:
+        dependency = aliased(ReconTask)
+        return list(
+            self.db.scalars(
+                select(dependency)
+                .select_from(TaskDependency)
+                .join(dependency, dependency.id == TaskDependency.depends_on_id)
+                .where(TaskDependency.task_id == task_id)
+            )
+        )
+
+    def _restore_policy_base_state(self, task: ReconTask) -> None:
+        metadata = self._policy_metadata(task)
+        base_status = metadata.get("base_status")
+        base_error_code = metadata.get("base_error_code")
+        if base_status == TaskStatus.skipped.value:
+            task.status = TaskStatus.skipped.value
+            task.completed_at = utcnow()
+            task.error_code = base_error_code
+            task.error_detail = metadata.get("base_error_detail")
+        else:
+            task.status = TaskStatus.queued.value
+            task.available_at = utcnow()
+            task.completed_at = None
+            task.error_code = None
+            task.error_detail = None
+
+    def _settle_task_dependencies(self, task: ReconTask) -> bool:
+        """Resolve dependency and capability gates; return true when terminal."""
+        dependencies = self._dependency_tasks(task.id)
+        metadata = self._policy_metadata(task)
+        predecessor_id = metadata.get("predecessor_task_id")
+        policy_predecessor = next(
+            (dependency for dependency in dependencies if dependency.id == predecessor_id),
+            None,
+        )
+        functional = [dependency for dependency in dependencies if dependency.id != predecessor_id]
+        if any(
+            dependency.status in _ALL_TERMINAL and not self._is_successful_terminal(dependency)
+            for dependency in functional
+        ):
+            task.status = TaskStatus.skipped.value
+            task.error_code = "dependency_failed"
+            task.error_detail = "a required predecessor did not complete successfully"
+            task.completed_at = utcnow()
+            self._discard_unused_cache_hit(task)
+            return True
+        if any(dependency.status not in _SUCCESS_TERMINAL for dependency in functional):
+            task.status = TaskStatus.blocked.value
+            return False
+        if predecessor_id is None:
+            if task.status == TaskStatus.blocked.value:
+                task.status = TaskStatus.queued.value
+                task.available_at = utcnow()
+            return task.status in _ALL_TERMINAL
+        if policy_predecessor is None:
+            task.status = TaskStatus.skipped.value
+            task.error_code = "policy_predecessor_missing"
+            task.error_detail = "capability policy predecessor is unavailable"
+            task.completed_at = utcnow()
+            self._discard_unused_cache_hit(task)
+            return True
+        if policy_predecessor.status not in _ALL_TERMINAL:
+            task.status = TaskStatus.blocked.value
+            return False
+
+        policy = CapabilityExecutionPolicy(metadata["policy"])
+        predecessor_succeeded = self._is_successful_terminal(policy_predecessor)
+        if policy == CapabilityExecutionPolicy.preferred_then_fallback and predecessor_succeeded:
+            task.status = TaskStatus.skipped.value
+            task.error_code = "fallback_not_required"
+            task.error_detail = (
+                f"preferred implementation {policy_predecessor.module_name} succeeded"
+            )
+            task.completed_at = utcnow()
+            self._discard_unused_cache_hit(task)
+            return True
+        if policy == CapabilityExecutionPolicy.sequential_enrichment and not predecessor_succeeded:
+            task.status = TaskStatus.skipped.value
+            task.error_code = "dependency_failed"
+            task.error_detail = (
+                f"sequential predecessor {policy_predecessor.module_name} did not succeed"
+            )
+            task.completed_at = utcnow()
+            self._discard_unused_cache_hit(task)
+            return True
+        self._restore_policy_base_state(task)
+        return task.status in _ALL_TERMINAL
+
+    def _settle_and_continue(self, task: ReconTask) -> None:
+        was_status = task.status
+        terminal = self._settle_task_dependencies(task)
+        target = self.db.get(Target, task.target_id)
+        if task.status != was_status:
+            if task.error_code == "fallback_not_required":
+                event_type = "task.fallback_suppressed"
+            elif task.status == TaskStatus.queued.value:
+                event_type = "task.policy_activated"
+            elif task.status == TaskStatus.skipped.value:
+                event_type = "task.dependency_failed"
+            else:
+                event_type = "task.dependency_wait"
+            self.knowledge.record_event(
+                target_id=task.target_id,
+                task_id=task.id,
+                event_type=event_type,
+                level="warning" if task.error_code == "dependency_failed" else "info",
+                message=task.error_detail or f"Capability policy activated {task.module_name}",
+                data=self._policy_metadata(task),
+            )
+        if target is not None and self._replay_ready_cache_hit(target, task):
+            terminal = True
+        if terminal:
+            self._unblock_dependents(task.id)
+
     def recover_expired_leases(self) -> int:
         now = utcnow()
         expired = list(
@@ -466,6 +723,9 @@ class TaskScheduler:
                 level="warning",
                 message=task.error_detail,
             )
+        for task in expired:
+            if task.status == TaskStatus.failed.value:
+                self._unblock_dependents(task.id)
         for target_id in affected_target_ids:
             target = self.db.get(Target, target_id)
             if target is not None:
@@ -474,7 +734,6 @@ class TaskScheduler:
 
     def claim_next(self, worker_id: str) -> ReconTask | None:
         self.recover_expired_leases()
-        dependency = aliased(ReconTask)
         # Claim one row at a time. Locking a large candidate batch makes other
         # workers skip high-priority work and limits horizontal throughput.
         for _ in range(25):
@@ -515,29 +774,12 @@ class TaskScheduler:
                 task.available_at = now + timedelta(milliseconds=250)
                 self.db.commit()
                 continue
-            dependency_statuses = list(
-                self.db.scalars(
-                    select(dependency.status)
-                    .select_from(TaskDependency)
-                    .join(dependency, dependency.id == TaskDependency.depends_on_id)
-                    .where(TaskDependency.task_id == task.id)
-                )
-            )
-            if any(
-                status in {TaskStatus.failed.value, TaskStatus.cancelled.value}
-                for status in dependency_statuses
-            ):
-                task.status = TaskStatus.skipped.value
-                task.error_code = "dependency_failed"
-                task.error_detail = "a required predecessor did not complete successfully"
-                task.completed_at = now
-                self._finalize_if_idle(target_lock)
-                self.db.commit()
-                continue
-            if any(status not in _SUCCESS_TERMINAL for status in dependency_statuses):
-                task.status = TaskStatus.blocked.value
-                self.db.commit()
-                continue
+            if self._dependency_tasks(task.id):
+                self._settle_and_continue(task)
+                if task.status != TaskStatus.queued.value:
+                    self._finalize_if_idle(target_lock)
+                    self.db.commit()
+                    continue
             module = self.registry.get(task.module_name)
             rate = module.manifest.rate_limit_per_second if module else None
             if rate:
@@ -683,7 +925,11 @@ class TaskScheduler:
             target_id=target.id,
             task_id=task.id,
             input_asset=normalized_input,
-            config=task.config or {},
+            config={
+                key: value
+                for key, value in (task.config or {}).items()
+                if not key.startswith("_reconator_")
+            },
             timeout_seconds=task.timeout_seconds,
         )
         try:
@@ -946,32 +1192,13 @@ class TaskScheduler:
                 )
             )
         )
-        dependency = aliased(ReconTask)
         for task_id in dependent_ids:
             task = self.db.scalar(
                 select(ReconTask).where(ReconTask.id == task_id).with_for_update()
             )
             if task is None or task.status != TaskStatus.blocked.value:
                 continue
-            dependency_statuses = list(
-                self.db.scalars(
-                    select(dependency.status)
-                    .select_from(TaskDependency)
-                    .join(dependency, dependency.id == TaskDependency.depends_on_id)
-                    .where(TaskDependency.task_id == task.id)
-                )
-            )
-            if any(
-                status in {TaskStatus.failed.value, TaskStatus.cancelled.value}
-                for status in dependency_statuses
-            ):
-                task.status = TaskStatus.skipped.value
-                task.error_code = "dependency_failed"
-                task.error_detail = "a required predecessor did not complete successfully"
-                task.completed_at = utcnow()
-            elif all(status in _SUCCESS_TERMINAL for status in dependency_statuses):
-                task.status = TaskStatus.queued.value
-                task.available_at = utcnow()
+            self._settle_and_continue(task)
 
     def _finalize_if_idle(self, target: Target) -> None:
         # Concurrent terminal tasks must serialize here. The last waiter sees

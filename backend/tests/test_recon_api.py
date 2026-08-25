@@ -108,6 +108,81 @@ def test_source_yield_distinguishes_exclusive_and_corroborated_assets(client, db
     assert sources[("passive.beta", "beta-index")]["exclusive_assets"] == 0
 
 
+def test_knowledge_summary_reports_exact_quality_health_and_zero_yield(client, db):
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.db.models import ReconTask
+
+    target = create_passive(client, "quality-summary.example.com")
+    completed_at = datetime.now(timezone.utc)
+    first_task = db.scalar(select(ReconTask).where(ReconTask.target_id == target["id"]))
+    first_task.module_name = "quality.zero-yield"
+    first_task.capability = "domain.quality_probe"
+    first_task.status = "completed"
+    first_task.started_at = completed_at - timedelta(seconds=10)
+    first_task.completed_at = completed_at
+    first_task.output_summary = {
+        "pagination_truncated": True,
+        "raw_output_truncated": True,
+        "validation_error_count": 4,
+    }
+    db.add(
+        ReconTask(
+            target_id=target["id"],
+            module_name="quality.zero-yield",
+            capability="domain.quality_probe",
+            status="failed",
+            idempotency_key="quality-failed-task",
+            cache_key="quality-failed-cache",
+            available_at=completed_at,
+            started_at=completed_at - timedelta(seconds=20),
+            completed_at=completed_at,
+            error_code="provider_timeout",
+            output_summary={"validation_error_count": 0},
+        )
+    )
+    db.commit()
+
+    response = client.get(f"/api/v1/targets/{target['id']}/knowledge-summary")
+    assert response.status_code == 200, response.text
+    summary = response.json()
+
+    assert summary["completeness"] == {
+        "tasks_inspected": 2,
+        "tasks_total": 2,
+        "truncated_tasks": 1,
+        "discovery_truncated_tasks": 1,
+        "evidence_truncated_tasks": 1,
+        "validation_rejections": 4,
+    }
+    zero_yield = next(
+        item
+        for item in summary["source_yield"]
+        if item["source_module"] == "quality.zero-yield"
+    )
+    assert zero_yield == {
+        "source_module": "quality.zero-yield",
+        "source_name": None,
+        "observations": 0,
+        "distinct_assets": 0,
+        "exclusive_assets": 0,
+        "average_confidence": 0,
+        "last_observed_at": None,
+    }
+    health = next(
+        item
+        for item in summary["module_health"]
+        if item["module_name"] == "quality.zero-yield"
+    )
+    assert health["error_codes"] == {"provider_timeout": 1}
+    assert health["duration_sample_size"] == 2
+    assert health["duration_total"] == 2
+    assert health["average_duration_seconds"] == 15
+    assert health["p95_duration_seconds"] == 20
+
+
 def test_scan_comparison_endpoint(client, db):
     from app.db.models import Target, TargetStatus
 

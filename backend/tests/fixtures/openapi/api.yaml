@@ -1,0 +1,91 @@
+openapi: 3.1.0
+info:
+  title: Fixture API
+  version: 1.0.0
+servers:
+  - url: https://{region}.api.example.invalid/{version}
+    variables:
+      region:
+        default: eu
+      version:
+        default: v1
+paths:
+  /users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      operationId: getUser
+      tags: [users]
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          example: do-not-store-this-example
+      security:
+        - bearerAuth: [users:read]
+    post:
+      operationId: updateUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: private@example.invalid
+                token:
+                  type: string
+                  default: do-not-store-this-secret
+                profile:
+                  type: object
+                  properties:
+                    displayName:
+                      type: string
+                      example: do-not-store-this-name
+      callbacks:
+        updated:
+          '{$request.body#/callbackUrl}':
+            post:
+              responses:
+                '204':
+                  description: accepted
+  /external:
+    get:
+      parameters:
+        - $ref: https://schemas.attacker.invalid/parameter.yaml
+      security: []
+webhooks:
+  userChanged:
+    post:
+      responses:
+        '200':
+          description: accepted
+components:
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      example: do-not-store-this-id
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      x-example-token: do-not-store-this-auth-token
+    oauth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.example.invalid/authorize
+          tokenUrl: https://auth.example.invalid/token?token=do-not-store-this-oauth-token
+          scopes:
+            users:read: Read users

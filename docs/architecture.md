@@ -81,9 +81,10 @@ Database uniqueness constraints remain the final concurrency-safe deduplication 
 Retries use exponential backoff and structured error codes. Expired leases become retryable work or final failures, allowing another worker to resume after a crash. Cancellation stops new claims; a module already running finishes within its timeout, refreshes cancellation state, and discards its output when cancellation was requested.
 
 Dependencies are declared by capability in module manifests and materialized in
-`task_dependencies` for the same input entity. A task remains blocked until every
-predecessor succeeds or is skipped; a failed or unavailable required predecessor
-suppresses the dependent task.
+`task_dependencies` for the same input entity. Parallel capability sources must all
+settle. Ordered capabilities expose their terminal policy task, so a successful
+preferred/fallback chain satisfies downstream dependencies even when an earlier
+implementation failed as expected.
 
 ## Scope semantics
 
@@ -106,13 +107,22 @@ A manifest declares:
 - default profiles;
 - priority, timeout, retry count, cache TTL, and rate limit;
 - whether derived input is acceptable;
+- parallel, preferred/fallback, or sequential-enrichment execution policy and
+  deterministic implementation priority;
 - implementation identity.
 
 Users may select a concrete module or a capability. Multiple implementations may
 therefore coexist, be compared, or replace one another without changing the scheduler.
-Current capability selection runs matching implementations as complementary sources;
-ordered preferred/fallback policy is intentionally listed as remaining work rather
-than being simulated with hidden tool-specific behavior.
+Matching implementations run in parallel by default. Capability manifests may instead
+declare preferred/fallback execution for redundant alternatives or sequential
+enrichment when later implementations require the earlier pass. Policy order and
+gates are persisted with the tasks, making them deterministic across retries, cache
+replay, lease recovery, and worker restarts.
+
+Bundled discovery adapters currently retain the parallel default because their sources
+are complementary and maximum normalized coverage is preferred. Ordered policies are
+available to profiles and third-party implementations without embedding tool names or
+fallback behavior in the core scheduler.
 
 Python package entry points under `reconator.modules` are discovered at worker startup. A broken plugin is logged and isolated from other registrations.
 

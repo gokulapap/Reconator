@@ -131,6 +131,13 @@ function taskTotal(row: ModuleHealth) {
   return row.tasks_total;
 }
 
+function formatDuration(seconds?: number | null) {
+  if (seconds === undefined || seconds === null) return "—";
+  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  return `${(seconds / 60).toFixed(1)}m`;
+}
+
 function WarningRow({
   tone,
   children,
@@ -165,7 +172,18 @@ export function ResultQuality({
   error?: Error | null;
   scanIsLive?: boolean;
 }) {
-  const quality = inspectTaskQuality(taskSample);
+  const sampledQuality = inspectTaskQuality(taskSample);
+  const hasServerCompleteness = summary?.completeness !== undefined && summary.completeness !== null;
+  const quality = summary?.completeness
+    ? {
+        sampled: summary.completeness.tasks_inspected,
+        total: summary.completeness.tasks_total,
+        discoveryBoundTasks: summary.completeness.discovery_truncated_tasks,
+        evidenceBoundTasks: summary.completeness.evidence_truncated_tasks,
+        rejectedEmissions: summary.completeness.validation_rejections,
+      }
+    : sampledQuality;
+  const truncatedTasks = summary?.completeness?.truncated_tasks;
   const hasDetailedYield = summary?.source_yield !== undefined;
   const hasAggregateHealth = summary?.module_health !== undefined;
   const sourceRows = (summary?.source_yield ?? fallbackSourceYield(summary))
@@ -184,7 +202,10 @@ export function ResultQuality({
         taskTotal(right) - taskTotal(left) ||
         left.module_name.localeCompare(right.module_name),
     );
-  const shownSources = sourceRows.slice(0, 12);
+  const positiveSources = sourceRows.filter((source) => source.observations > 0);
+  const shownPositiveSources = positiveSources.slice(0, 12);
+  const zeroYieldSources = sourceRows.filter((source) => source.observations === 0);
+  const shownSources = [...shownPositiveSources, ...zeroYieldSources];
   const hasQualityWarning =
     quality.discoveryBoundTasks > 0 ||
     quality.evidenceBoundTasks > 0 ||
@@ -217,11 +238,11 @@ export function ResultQuality({
           <Badge variant="outline">
             {summary?.observations_total.toLocaleString() ?? 0} observations
           </Badge>
-          <Badge variant="outline">{healthRows.length} modules observed</Badge>
+          <Badge variant="outline">{healthRows.length} modules tracked</Badge>
         </div>
       </div>
 
-      {error && (
+      {error && !hasServerCompleteness && (
         <div
           role="alert"
           className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 text-sm text-rose-700 dark:text-rose-300"
@@ -273,6 +294,11 @@ export function ResultQuality({
                               via {source.source_module}
                             </span>
                           )}
+                          {!source.source_name && source.observations === 0 && (
+                            <span className="mt-0.5 block text-[10px] text-amber-700 dark:text-amber-300">
+                              completed module · zero persisted yield
+                            </span>
+                          )}
                         </th>
                         <td className="px-3 py-3 text-right tabular-nums">{source.observations.toLocaleString()}</td>
                         <td className="px-3 py-3 text-right tabular-nums">{hasDetailedYield ? source.distinct_assets.toLocaleString() : "—"}</td>
@@ -294,9 +320,9 @@ export function ResultQuality({
                 </p>
               </div>
             )}
-            {sourceRows.length > shownSources.length && (
+            {positiveSources.length > shownPositiveSources.length && (
               <p className="mt-3 text-xs text-muted-foreground">
-                Showing the 12 highest-yield sources; {sourceRows.length - shownSources.length} lower-yield sources are summarized out of this view.
+                Showing the 12 highest-yield sources plus every completed zero-yield module; {positiveSources.length - shownPositiveSources.length} lower-yield source(s) are summarized out of this view.
               </p>
             )}
           </CardContent>
@@ -310,11 +336,13 @@ export function ResultQuality({
                 Completeness and evidence
               </CardTitle>
               <p className="mt-1 text-xs text-muted-foreground">
-                Signals reported by the inspected task output summaries.
+                {hasServerCompleteness
+                  ? "Exact scan totals aggregated from every task output summary."
+                  : "Signals reported by the available bounded task sample."}
               </p>
             </div>
             <Badge variant="outline">
-              {quality.sampled.toLocaleString()}/{quality.total.toLocaleString()} inspected
+              {quality.sampled.toLocaleString()}/{quality.total.toLocaleString()} {hasServerCompleteness ? "tasks aggregated" : "inspected"}
             </Badge>
           </CardHeader>
           <CardContent>
@@ -345,7 +373,12 @@ export function ResultQuality({
                 </WarningRow>
               )}
             </ul>
-            {taskSample && quality.total > 0 && !hasQualityWarning && !error && (
+            {truncatedTasks !== undefined && truncatedTasks > 0 && (
+              <p className="mt-3 text-[11px] text-muted-foreground">
+                {truncatedTasks.toLocaleString()} unique task(s) reported at least one discovery or evidence-retention truncation signal.
+              </p>
+            )}
+            {(hasServerCompleteness || taskSample) && quality.total > 0 && !hasQualityWarning && (!error || hasServerCompleteness) && (
               <div className="flex gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4 text-sm text-emerald-800 dark:text-emerald-300">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                 <p>
@@ -354,7 +387,7 @@ export function ResultQuality({
                 </p>
               </div>
             )}
-            {!taskSample && !error && (
+            {!hasServerCompleteness && !taskSample && !error && (
               <p
                 className="py-8 text-center text-sm text-muted-foreground"
                 role={loading ? "status" : undefined}
@@ -364,7 +397,7 @@ export function ResultQuality({
                   : "Task quality metadata is not available yet."}
               </p>
             )}
-            {taskSample && quality.total === 0 && (
+            {(hasServerCompleteness || taskSample) && quality.total === 0 && (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 {scanIsLive
                   ? "No task output summaries are available to inspect yet."
@@ -383,7 +416,7 @@ export function ResultQuality({
               Module execution health
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
-              Failures and blocked work sort first. Failure rates use finished attempts only.
+              Failures and blocked work sort first. Latency is avg / p95 over the server-bounded latest finished-task sample.
             </p>
           </div>
           {!hasAggregateHealth && summary && <Badge variant="outline">task sample</Badge>}
@@ -391,7 +424,7 @@ export function ResultQuality({
         <CardContent>
           {healthRows.length ? (
             <div className="max-h-[440px] overflow-auto rounded-xl border border-border/70">
-              <table className="w-full min-w-[720px] text-left text-xs">
+              <table className="w-full min-w-[980px] text-left text-xs">
                 <thead className="sticky top-0 z-10 bg-secondary text-[10px] uppercase tracking-wider text-muted-foreground">
                   <tr>
                     <th scope="col" className="px-3 py-2.5 font-medium">Module</th>
@@ -400,6 +433,8 @@ export function ResultQuality({
                     <th scope="col" className="px-3 py-2.5 text-right font-medium">Failed</th>
                     <th scope="col" className="px-3 py-2.5 text-right font-medium">Blocked / retry</th>
                     <th scope="col" className="px-3 py-2.5 text-right font-medium">Failure rate</th>
+                    <th scope="col" className="px-3 py-2.5 text-right font-medium">Avg / p95</th>
+                    <th scope="col" className="px-3 py-2.5 font-medium">Stable error codes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -409,8 +444,14 @@ export function ResultQuality({
                     const failed = statusCount(row, "failed");
                     const blocked = statusCount(row, "blocked");
                     const retryWait = statusCount(row, "retry_wait");
+                    const errorCodes = Object.entries(row.error_codes ?? {}).sort(
+                      ([leftCode, leftCount], [rightCode, rightCount]) =>
+                        rightCount - leftCount || leftCode.localeCompare(rightCode),
+                    );
+                    const durationSampleSize = row.duration_sample_size ?? 0;
+                    const durationTotal = row.duration_total ?? 0;
                     return (
-                      <tr key={row.module_name}>
+                      <tr key={`${row.module_name}:${row.capability}`}>
                         <th scope="row" className="max-w-72 px-3 py-3 font-normal">
                           <span className="block break-all font-mono text-foreground">{row.module_name}</span>
                           <span className="mt-0.5 block break-all text-[10px] text-muted-foreground">{row.capability}</span>
@@ -420,6 +461,27 @@ export function ResultQuality({
                         <td className={`px-3 py-3 text-right tabular-nums ${failed ? "font-medium text-rose-700 dark:text-rose-300" : ""}`}>{failed.toLocaleString()}</td>
                         <td className={`px-3 py-3 text-right tabular-nums ${blocked + retryWait ? "font-medium text-amber-700 dark:text-amber-300" : ""}`}>{blocked.toLocaleString()} / {retryWait.toLocaleString()}</td>
                         <td className={`whitespace-nowrap px-3 py-3 text-right tabular-nums ${row.failure_rate > 0 ? "text-rose-700 dark:text-rose-300" : "text-muted-foreground"}`}>{Math.round(row.failure_rate * 100)}%</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
+                          <span>{formatDuration(row.average_duration_seconds)} / {formatDuration(row.p95_duration_seconds)}</span>
+                          {durationSampleSize > 0 && (
+                            <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                              {durationSampleSize.toLocaleString()}/{durationTotal.toLocaleString()} timings
+                            </span>
+                          )}
+                        </td>
+                        <td className="max-w-72 px-3 py-3">
+                          {errorCodes.length ? (
+                            <div className="flex flex-wrap gap-1">
+                              {errorCodes.map(([code, count]) => (
+                                <Badge key={code} variant="outline" className="font-mono text-[10px] font-normal text-rose-700 dark:text-rose-300">
+                                  {code} ×{count.toLocaleString()}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}

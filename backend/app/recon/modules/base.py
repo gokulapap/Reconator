@@ -18,6 +18,14 @@ class ModuleMode(StrEnum):
     active = "active"
 
 
+class CapabilityExecutionPolicy(StrEnum):
+    """How implementations of one capability are coordinated."""
+
+    parallel_sources = "parallel_sources"
+    preferred_then_fallback = "preferred_then_fallback"
+    sequential_enrichment = "sequential_enrichment"
+
+
 @dataclass(frozen=True, slots=True)
 class ModuleManifest:
     name: str
@@ -37,6 +45,8 @@ class ModuleManifest:
     enabled: bool = True
     implementation: str = "python"
     depends_on_capabilities: frozenset[str] = frozenset()
+    capability_policy: CapabilityExecutionPolicy | None = None
+    implementation_priority: int = 100
 
     def __post_init__(self) -> None:
         if not _MODULE_NAME.fullmatch(self.name):
@@ -62,6 +72,8 @@ class ModuleManifest:
             raise ValueError(f"module {self.name} declares an invalid profile")
         if not -10_000 <= self.priority <= 10_000:
             raise ValueError(f"module {self.name} has an invalid priority")
+        if not -10_000 <= self.implementation_priority <= 10_000:
+            raise ValueError(f"module {self.name} has an invalid implementation priority")
         if not 1 <= self.timeout_seconds <= 86_400 or not 1 <= self.max_attempts <= 20:
             raise ValueError(f"module {self.name} has invalid execution limits")
         if self.cache_ttl_seconds < 0:

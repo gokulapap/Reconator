@@ -9,6 +9,7 @@ ARG SUBFINDER_VERSION=v2.16.0
 ARG URLFINDER_VERSION=v0.0.3
 ARG HTTPX_VERSION=v1.10.0
 ARG KATANA_VERSION=v1.7.0
+ARG KATANA_PGX_VERSION=v5.10.0
 ARG NAABU_VERSION=v2.6.1
 ARG JSLUICE_VERSION=0ddfab153e060a9eeaded4d8669233f7c071e7e4
 ARG ALTERX_VERSION=v0.1.0
@@ -17,11 +18,21 @@ ARG CDNCHECK_VERSION=v1.2.50
 RUN go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@${SUBFINDER_VERSION}
 RUN go install github.com/projectdiscovery/urlfinder/cmd/urlfinder@${URLFINDER_VERSION}
 RUN go install github.com/projectdiscovery/httpx/cmd/httpx@${HTTPX_VERSION}
-RUN go install github.com/projectdiscovery/katana/cmd/katana@${KATANA_VERSION}
+RUN mkdir -p /tmp/katana-build \
+ && cd /tmp/katana-build \
+ && go mod init reconator.invalid/katana-build \
+ && go mod edit -require=github.com/projectdiscovery/katana@${KATANA_VERSION} \
+ && go mod edit -require=github.com/jackc/pgx/v5@${KATANA_PGX_VERSION} \
+ && go mod download \
+ && go build -mod=mod -trimpath -buildvcs=false -o /out/katana github.com/projectdiscovery/katana/cmd/katana
+RUN go version -m /out/katana | grep -Eq 'mod[[:space:]]+github.com/projectdiscovery/katana[[:space:]]+v1.7.0([[:space:]]|$)'
+RUN go version -m /out/katana | grep -Eq 'dep[[:space:]]+github.com/jackc/pgx/v5[[:space:]]+v5.10.0([[:space:]]|$)'
 RUN go install github.com/projectdiscovery/naabu/v2/cmd/naabu@${NAABU_VERSION}
 RUN CGO_ENABLED=1 go install github.com/BishopFox/jsluice/cmd/jsluice@${JSLUICE_VERSION}
 RUN go install github.com/projectdiscovery/alterx/cmd/alterx@${ALTERX_VERSION}
 RUN go install github.com/projectdiscovery/cdncheck/cmd/cdncheck@${CDNCHECK_VERSION}
+ARG DNSX_VERSION=v1.3.0
+RUN go install github.com/projectdiscovery/dnsx/cmd/dnsx@${DNSX_VERSION}
 
 RUN mkdir -p /licenses \
  && cp /go/pkg/mod/github.com/projectdiscovery/subfinder/v2@v2.16.0/LICENSE.md /licenses/subfinder-LICENSE.md \
@@ -31,7 +42,8 @@ RUN mkdir -p /licenses \
  && cp /go/pkg/mod/github.com/projectdiscovery/naabu/v2@v2.6.1/LICENSE.md /licenses/naabu-LICENSE.md \
  && cp /go/pkg/mod/github.com/\!bishop\!fox/jsluice@v0.0.0-20240110145140-0ddfab153e06/LICENSE /licenses/jsluice-LICENSE \
  && cp /go/pkg/mod/github.com/projectdiscovery/alterx@v0.1.0/LICENSE /licenses/alterx-LICENSE \
- && cp /go/pkg/mod/github.com/projectdiscovery/cdncheck@v1.2.50/LICENSE.md /licenses/cdncheck-LICENSE.md
+ && cp /go/pkg/mod/github.com/projectdiscovery/cdncheck@v1.2.50/LICENSE.md /licenses/cdncheck-LICENSE.md \
+ && cp /go/pkg/mod/github.com/projectdiscovery/dnsx@v1.3.0/LICENSE.md /licenses/dnsx-LICENSE.md
 
 
 FROM python:3.11-slim-bookworm AS runtime

@@ -180,7 +180,16 @@ class SourceYield(BaseModel):
     distinct_assets: int
     exclusive_assets: int
     average_confidence: float
-    last_observed_at: datetime
+    last_observed_at: datetime | None
+
+
+class ScanCompleteness(BaseModel):
+    tasks_inspected: int
+    tasks_total: int
+    truncated_tasks: int
+    discovery_truncated_tasks: int
+    evidence_truncated_tasks: int
+    validation_rejections: int
 
 
 class ModuleHealth(BaseModel):
@@ -189,6 +198,11 @@ class ModuleHealth(BaseModel):
     tasks_total: int
     tasks_by_status: dict[str, int]
     failure_rate: float
+    error_codes: dict[str, int] = Field(default_factory=dict)
+    duration_sample_size: int = 0
+    duration_total: int = 0
+    average_duration_seconds: float | None = None
+    p95_duration_seconds: float | None = None
 
 
 class ScanKnowledgeSummary(BaseModel):
@@ -202,3 +216,4 @@ class ScanKnowledgeSummary(BaseModel):
     observations_by_module: dict[str, int]
     source_yield: list[SourceYield] = Field(default_factory=list)
     module_health: list[ModuleHealth] = Field(default_factory=list)
+    completeness: ScanCompleteness | None = None
