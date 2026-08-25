@@ -1,7 +1,10 @@
 [project]
 name = "reconator-backend"
-version = "2.1.0"
+version = "3.0.0"
 requires-python = ">=3.11"
+
+[project.scripts]
+reconator = "app.cli:main"
 
 [tool.ruff]
 line-length = 100
@@ -28,6 +31,10 @@ ignore = ["E501", "B008"]
 addopts = "-q --strict-markers"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "performance: deterministic local performance regression checks",
+]
 
 [tool.mypy]
 python_version = "3.11"

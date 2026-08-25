@@ -45,12 +45,37 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+async function download(path: string, fallbackName: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  const key = apiKeyStore.get();
+  if (key) headers["X-API-Key"] = key;
+  const res = await fetch(`${BASE}${PREFIX}${path}`, { headers });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      detail = (await res.json()).detail ?? detail;
+    } catch {}
+    throw new Error(detail);
+  }
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  const filename = (match?.[1] || fallbackName).replace(/[\\/\0]/g, "-");
+  const href = URL.createObjectURL(await res.blob());
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(href);
+}
+
 export type TargetStatus =
   | "queued"
   | "running"
   | "completed"
   | "failed"
   | "cancelled";
+
+export type TargetKind = "domain" | "url" | "ip_address" | "cidr";
 
 export type ModuleStatus =
   | "pending"
@@ -59,13 +84,19 @@ export type ModuleStatus =
   | "failed"
   | "skipped";
 
+export type ReconTaskStatus = ModuleStatus | "retry_wait" | "blocked" | "cancelled";
+
 export interface Target {
   id: number;
   url: string;
+  target_kind: TargetKind;
   status: TargetStatus;
   error: string | null;
   tags: string[];
   selected_modules: string[] | null;
+  profile: "passive" | "balanced" | "active";
+  authorization_confirmed: boolean;
+  parent_target_id: number | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -109,8 +140,131 @@ export interface Stats {
 
 export interface ModuleInfo {
   name: string;
+  version: string;
   description: string;
   timeout: number;
+  capability: string;
+  consumes: string[];
+  produces: string[];
+  mode: "local" | "passive" | "active";
+  implementation: string;
+  default_profiles: string[];
+  cache_ttl_seconds: number;
+  accepts_derived_inputs: boolean;
+}
+
+export interface Asset {
+  id: number;
+  kind: string;
+  value: string;
+  canonical_value: string;
+  attributes: Record<string, unknown>;
+  priority_score: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  last_changed_at: string;
+  active: boolean;
+}
+
+export interface AssetList {
+  items: Asset[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AssetRelationship {
+  id: number;
+  source_asset_id: number;
+  target_asset_id: number;
+  relationship_type: string;
+  attributes: Record<string, unknown>;
+  confidence: number;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export interface AssetGraph {
+  nodes: Asset[];
+  edges: AssetRelationship[];
+  truncated: boolean;
+}
+
+export interface ReconTask {
+  id: number;
+  target_id: number;
+  input_asset_id: number | null;
+  parent_task_id: number | null;
+  cache_hit_task_id: number | null;
+  module_name: string;
+  module_version: string;
+  capability: string;
+  scope_basis: "direct" | "derived";
+  status: ReconTaskStatus;
+  priority: number;
+  attempts: number;
+  max_attempts: number;
+  timeout_seconds: number;
+  available_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  error_code: string | null;
+  error_detail: string | null;
+  output_summary: Record<string, unknown>;
+}
+
+export interface TaskDetail extends ReconTask {
+  raw_output: string | null;
+  config: Record<string, unknown>;
+}
+
+export interface TaskList {
+  items: ReconTask[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface ReconEvent {
+  id: number;
+  target_id: number;
+  task_id: number | null;
+  event_type: string;
+  level: string;
+  message: string;
+  data: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ScopeRule {
+  id: number;
+  target_id: number;
+  action: "include" | "exclude";
+  rule_type: "exact" | "subdomain" | "cidr" | "url_prefix" | "regex";
+  asset_kind: string | null;
+  pattern: string;
+  normalized_pattern: string;
+  priority: number;
+  reason: string | null;
+  created_at: string;
+}
+
+export interface ScanComparison {
+  baseline_target_id: number;
+  comparison_target_id: number;
+  added: Asset[];
+  removed: Asset[];
+  changed: Asset[];
+  unchanged_count: number;
+  truncated: boolean;
+}
+
+export interface KnowledgeStats {
+  assets_total: number;
+  relationships_total: number;
+  observations_total: number;
+  tasks_by_status: Record<string, number>;
+  assets_by_kind: Record<string, number>;
 }
 
 export interface BulkResult {
@@ -148,9 +302,12 @@ export const api = {
   getTarget: (id: number) => request<TargetDetail>(`/targets/${id}`),
   createTarget: (payload: {
     url: string;
+    target_kind?: TargetKind;
     tags?: string[];
     selected_modules?: string[] | null;
     notes?: string | null;
+    profile?: "passive" | "balanced" | "active";
+    authorization_confirmed: boolean;
   }) =>
     request<Target>("/targets", {
       method: "POST",
@@ -158,8 +315,11 @@ export const api = {
     }),
   bulkCreate: (payload: {
     urls: string[];
+    target_kind?: TargetKind;
     tags?: string[];
     selected_modules?: string[] | null;
+    profile?: "passive" | "balanced" | "active";
+    authorization_confirmed: boolean;
   }) =>
     request<BulkResult>("/targets/bulk", {
       method: "POST",
@@ -177,13 +337,48 @@ export const api = {
   getResult: (targetId: number, module: string) =>
     request<ScanResult>(`/targets/${targetId}/results/${module}`),
   downloadResult: (targetId: number, module: string) =>
-    `${BASE}${PREFIX}/targets/${targetId}/results/${module}/download`,
+    download(
+      `/targets/${targetId}/results/${encodeURIComponent(module)}/download`,
+      `reconator-${targetId}-${module}.txt`,
+    ),
   exportTargets: (format: "csv" | "json", status?: TargetStatus) => {
     const qs = new URLSearchParams({ format });
     if (status) qs.set("status", status);
-    return `${BASE}${PREFIX}/targets/export?${qs.toString()}`;
+    return download(`/targets/export?${qs.toString()}`, `reconator-targets.${format}`);
   },
   modules: () => request<ModuleInfo[]>("/modules"),
+  listAssets: (targetId: number) =>
+    request<AssetList>(`/targets/${targetId}/assets?page_size=500`),
+  getGraph: (targetId: number) =>
+    request<AssetGraph>(`/targets/${targetId}/graph?limit=500`),
+  listTasks: (targetId: number) =>
+    request<TaskList>(`/targets/${targetId}/tasks?page_size=500`),
+  getTask: (targetId: number, taskId: number) =>
+    request<TaskDetail>(`/targets/${targetId}/tasks/${taskId}`),
+  listEvents: (targetId: number) =>
+    request<ReconEvent[]>(`/targets/${targetId}/events?limit=500`),
+  listScope: (targetId: number) =>
+    request<ScopeRule[]>(`/targets/${targetId}/scope`),
+  addScope: (
+    targetId: number,
+    payload: {
+      action: ScopeRule["action"];
+      rule_type: ScopeRule["rule_type"];
+      asset_kind?: string | null;
+      pattern: string;
+      priority?: number;
+      reason?: string | null;
+    },
+  ) =>
+    request<ScopeRule>(`/targets/${targetId}/scope`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteScope: (targetId: number, ruleId: number) =>
+    request<void>(`/targets/${targetId}/scope/${ruleId}`, { method: "DELETE" }),
+  compareScans: (targetId: number, baselineId: number) =>
+    request<ScanComparison>(`/targets/${targetId}/compare/${baselineId}`),
+  knowledgeStats: () => request<KnowledgeStats>("/knowledge/stats"),
   systemInfo: () => request<SystemInfo>("/system/info"),
   testNotify: () =>
     request<{ sent: boolean; enabled: boolean }>("/system/test-notify", {

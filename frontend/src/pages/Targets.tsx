@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Download, Plus, Search, Tag, Trash2, Upload } from "lucide-react";
 
-import { api, type TargetStatus } from "@/lib/api";
+import { api, type TargetKind, type TargetStatus } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -49,11 +49,21 @@ export function Targets() {
 
   const [singleOpen, setSingleOpen] = useState(false);
   const [singleUrl, setSingleUrl] = useState("");
+  const [singleKind, setSingleKind] = useState<TargetKind>("domain");
   const [singleTags, setSingleTags] = useState("");
+  const [singleProfile, setSingleProfile] = useState<"passive" | "balanced" | "active">("balanced");
+  const [singleAuthorized, setSingleAuthorized] = useState(false);
+  const [singleModules, setSingleModules] = useState<string[]>([]);
 
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
+  const [bulkKind, setBulkKind] = useState<TargetKind>("domain");
   const [bulkTags, setBulkTags] = useState("");
+  const [bulkProfile, setBulkProfile] = useState<"passive" | "balanced" | "active">("balanced");
+  const [bulkAuthorized, setBulkAuthorized] = useState(false);
+  const [bulkModules, setBulkModules] = useState<string[]>([]);
+
+  const modules = useQuery({ queryKey: ["modules"], queryFn: api.modules });
 
   const targets = useQuery({
     queryKey: ["targets", tab, search, tag],
@@ -68,13 +78,22 @@ export function Targets() {
   });
 
   const create = useMutation({
-    mutationFn: (payload: { url: string; tags?: string[] }) =>
+    mutationFn: (payload: {
+      url: string;
+      target_kind: TargetKind;
+      tags?: string[];
+      profile: "passive" | "balanced" | "active";
+      selected_modules?: string[] | null;
+      authorization_confirmed: boolean;
+    }) =>
       api.createTarget(payload),
     onSuccess: (t) => {
       toast({ title: "Queued", description: t.url });
       setSingleOpen(false);
       setSingleUrl("");
       setSingleTags("");
+      setSingleAuthorized(false);
+      setSingleModules([]);
       qc.invalidateQueries();
     },
     onError: (e: Error) =>
@@ -82,7 +101,14 @@ export function Targets() {
   });
 
   const bulk = useMutation({
-    mutationFn: (payload: { urls: string[]; tags?: string[] }) =>
+    mutationFn: (payload: {
+      urls: string[];
+      target_kind: TargetKind;
+      tags?: string[];
+      profile: "passive" | "balanced" | "active";
+      selected_modules?: string[] | null;
+      authorization_confirmed: boolean;
+    }) =>
       api.bulkCreate(payload),
     onSuccess: (r) => {
       toast({
@@ -95,6 +121,8 @@ export function Targets() {
       setBulkOpen(false);
       setBulkText("");
       setBulkTags("");
+      setBulkAuthorized(false);
+      setBulkModules([]);
       qc.invalidateQueries();
     },
     onError: (e: Error) =>
@@ -127,7 +155,14 @@ export function Targets() {
       .map((s) => s.trim())
       .filter(Boolean);
     if (!urls.length) return;
-    bulk.mutate({ urls, tags: parseTags(bulkTags) });
+    bulk.mutate({
+      urls,
+      target_kind: bulkKind,
+      tags: parseTags(bulkTags),
+      profile: bulkProfile,
+      selected_modules: bulkModules.length ? bulkModules : null,
+      authorization_confirmed: bulkAuthorized,
+    });
   };
 
   return (
@@ -136,19 +171,15 @@ export function Targets() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Targets</h1>
           <p className="text-sm text-muted-foreground">
-            Add a domain (or paste many) to queue a recon scan.
+            Add authorized domains, URLs, IP addresses, or CIDRs to queue recon.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button asChild variant="outline" size="sm">
-            <a href={api.exportTargets("csv")}>
-              <Download /> CSV
-            </a>
+          <Button variant="outline" size="sm" onClick={() => void api.exportTargets("csv")}>
+            <Download /> CSV
           </Button>
-          <Button asChild variant="outline" size="sm">
-            <a href={api.exportTargets("json")}>
-              <Download /> JSON
-            </a>
+          <Button variant="outline" size="sm" onClick={() => void api.exportTargets("json")}>
+            <Download /> JSON
           </Button>
 
           <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
@@ -161,9 +192,24 @@ export function Targets() {
               <DialogHeader>
                 <DialogTitle>Bulk add targets</DialogTitle>
                 <DialogDescription>
-                  One domain per line. Up to 500 at a time.
+                  One target per line. Up to 500 targets of the selected type.
                 </DialogDescription>
               </DialogHeader>
+              <select
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                value={bulkKind}
+                onChange={(event) => setBulkKind(event.target.value as TargetKind)}
+              >
+                <option value="domain">Domain</option>
+                <option value="url">HTTP(S) URL</option>
+                <option value="ip_address">IP address</option>
+                <option value="cidr">CIDR range</option>
+              </select>
+              <ModulePicker
+                modules={modules.data ?? []}
+                selected={bulkModules}
+                onChange={setBulkModules}
+              />
               <Textarea
                 rows={10}
                 placeholder={"example.com\nfoo.bar\nacme.io"}
@@ -176,9 +222,32 @@ export function Targets() {
                 value={bulkTags}
                 onChange={(e) => setBulkTags(e.target.value)}
               />
+              <select
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                value={bulkProfile}
+                onChange={(event) => setBulkProfile(event.target.value as typeof bulkProfile)}
+              >
+                <option value="passive">Passive — public data and local analysis</option>
+                <option value="balanced">Balanced — safe active discovery</option>
+                <option value="active">Active — explicitly selected active modules</option>
+              </select>
+              <ModulePicker
+                modules={modules.data ?? []}
+                selected={singleModules}
+                onChange={setSingleModules}
+              />
+              <label className="flex items-start gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={bulkAuthorized}
+                  onChange={(event) => setBulkAuthorized(event.target.checked)}
+                />
+                I confirm I am authorized to assess every target in this list.
+              </label>
               <DialogFooter>
                 <Button
-                  disabled={!bulkText.trim() || bulk.isPending}
+                  disabled={!bulkText.trim() || !bulkAuthorized || bulk.isPending}
                   onClick={submitBulk}
                 >
                   Queue {bulkText.split(/\r?\n/).filter((s) => s.trim()).length}{" "}
@@ -198,18 +267,32 @@ export function Targets() {
               <DialogHeader>
                 <DialogTitle>Add a target</DialogTitle>
                 <DialogDescription>
-                  Enter a bare domain. The worker picks it up automatically.
+                  Choose a target type and provide a value within your authorized scope.
                 </DialogDescription>
               </DialogHeader>
+              <select
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                value={singleKind}
+                onChange={(event) => setSingleKind(event.target.value as TargetKind)}
+              >
+                <option value="domain">Domain</option>
+                <option value="url">HTTP(S) URL</option>
+                <option value="ip_address">IP address</option>
+                <option value="cidr">CIDR range</option>
+              </select>
               <Input
-                placeholder="example.com"
+                placeholder={singleKind === "url" ? "https://example.com/app" : singleKind === "ip_address" ? "203.0.113.10" : singleKind === "cidr" ? "203.0.113.0/24" : "example.com"}
                 value={singleUrl}
                 onChange={(e) => setSingleUrl(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && singleUrl.trim()) {
+                  if (e.key === "Enter" && singleUrl.trim() && singleAuthorized) {
                     create.mutate({
                       url: singleUrl.trim(),
+                      target_kind: singleKind,
                       tags: parseTags(singleTags),
+                      profile: singleProfile,
+                      selected_modules: singleModules.length ? singleModules : null,
+                      authorization_confirmed: singleAuthorized,
                     });
                   }
                 }}
@@ -219,13 +302,35 @@ export function Targets() {
                 value={singleTags}
                 onChange={(e) => setSingleTags(e.target.value)}
               />
+              <select
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                value={singleProfile}
+                onChange={(event) => setSingleProfile(event.target.value as typeof singleProfile)}
+              >
+                <option value="passive">Passive — public data and local analysis</option>
+                <option value="balanced">Balanced — safe active discovery</option>
+                <option value="active">Active — explicitly selected active modules</option>
+              </select>
+              <label className="flex items-start gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={singleAuthorized}
+                  onChange={(event) => setSingleAuthorized(event.target.checked)}
+                />
+                I confirm I own this target or have permission to assess it.
+              </label>
               <DialogFooter>
                 <Button
-                  disabled={!singleUrl.trim() || create.isPending}
+                  disabled={!singleUrl.trim() || !singleAuthorized || create.isPending}
                   onClick={() =>
                     create.mutate({
                       url: singleUrl.trim(),
+                      target_kind: singleKind,
                       tags: parseTags(singleTags),
+                      profile: singleProfile,
+                      selected_modules: singleModules.length ? singleModules : null,
+                      authorization_confirmed: singleAuthorized,
                     })
                   }
                 >
@@ -278,7 +383,7 @@ export function Targets() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Domain</TableHead>
+                  <TableHead>Target</TableHead>
                   <TableHead>Tags</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Queued</TableHead>
@@ -296,6 +401,7 @@ export function Targets() {
                       >
                         {t.url}
                       </Link>
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{t.target_kind.replace("_", " ")}</p>
                       {t.error && (
                         <p className="text-xs text-rose-400 mt-0.5">{t.error}</p>
                       )}
@@ -347,5 +453,45 @@ export function Targets() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ModulePicker({
+  modules,
+  selected,
+  onChange,
+}: {
+  modules: Awaited<ReturnType<typeof api.modules>>;
+  selected: string[];
+  onChange: (value: string[]) => void;
+}) {
+  return (
+    <details className="rounded-md border border-input p-3 text-sm">
+      <summary className="cursor-pointer text-muted-foreground">
+        Module override ({selected.length ? `${selected.length} selected` : "use profile defaults"})
+      </summary>
+      <div className="mt-3 max-h-48 space-y-2 overflow-auto">
+        {modules.map((module) => (
+          <label key={module.name} className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={selected.includes(module.name)}
+              onChange={(event) =>
+                onChange(
+                  event.target.checked
+                    ? [...selected, module.name].sort()
+                    : selected.filter((name) => name !== module.name),
+                )
+              }
+            />
+            <span>
+              <span className="font-mono text-xs">{module.name}</span>
+              <span className="block text-xs text-muted-foreground">{module.description}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </details>
   );
 }

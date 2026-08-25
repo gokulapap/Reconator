@@ -34,10 +34,6 @@ module_status = sa.Enum(
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    target_status.create(bind, checkfirst=True)
-    module_status.create(bind, checkfirst=True)
-
     op.create_table(
         "targets",
         sa.Column("id", sa.Integer, primary_key=True),

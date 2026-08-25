@@ -6,5 +6,6 @@ build:
     web: Dockerfile
     worker: Dockerfile
 run:
-  web: gunicorn app.main:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:$PORT --workers 2 --timeout 120
+  release: alembic upgrade head
+  web: python -m app.container_entrypoint
   worker: python -m app.worker

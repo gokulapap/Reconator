@@ -35,6 +35,11 @@ export function Dashboard() {
     queryFn: () => api.listTargets({ page: 1, page_size: 8 }),
     refetchInterval: 5000,
   });
+  const knowledge = useQuery({
+    queryKey: ["knowledge-stats"],
+    queryFn: api.knowledgeStats,
+    refetchInterval: 5000,
+  });
 
   const cards = [
     { label: "Queued", value: stats.data?.queued ?? 0, icon: Clock, color: "text-cyan-400" },
@@ -80,6 +85,12 @@ export function Dashboard() {
             </CardContent>
           </Card>
         ))}
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card><CardContent className="pt-5"><div className="text-2xl font-semibold">{knowledge.data?.assets_total ?? 0}</div><p className="text-xs text-muted-foreground">Persistent graph assets</p></CardContent></Card>
+        <Card><CardContent className="pt-5"><div className="text-2xl font-semibold">{knowledge.data?.relationships_total ?? 0}</div><p className="text-xs text-muted-foreground">Correlated relationships</p></CardContent></Card>
+        <Card><CardContent className="pt-5"><div className="text-2xl font-semibold">{knowledge.data?.observations_total ?? 0}</div><p className="text-xs text-muted-foreground">Provenance observations</p></CardContent></Card>
       </div>
 
       <Card>

@@ -1,4 +1,4 @@
-FROM python:3.11-slim-bookworm AS base
+FROM python:3.11-slim-bookworm AS builder
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -6,40 +6,42 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONWARNINGS=ignore
 
-# Recon tooling — keeps the original Aptfile contract.
+WORKDIR /app
+
+COPY requirements.txt /app/requirements.txt
+RUN python -m venv /opt/venv \
+ && /opt/venv/bin/pip install --upgrade pip \
+ && /opt/venv/bin/pip install -r /app/requirements.txt
+
+
+FROM python:3.11-slim-bookworm AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH=/opt/venv/bin:$PATH
+
 RUN apt-get update -y \
  && apt-get install -y --no-install-recommends \
-      bash \
       ca-certificates \
-      curl \
       dnsutils \
-      gcc \
-      jq \
-      libc6-dev \
-      libcurl4-openssl-dev \
-      libssl-dev \
-      nmap \
-      sqlmap \
-      whois \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --gid 10001 reconator \
+ && useradd --uid 10001 --gid reconator --create-home --shell /usr/sbin/nologin reconator
+
+COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /app
 
-COPY backend/requirements.txt /app/requirements.txt
-RUN pip install --upgrade pip && pip install -r /app/requirements.txt
-
-COPY backend /app
-COPY modules /app/modules
-COPY .gf /root/.gf
+COPY --chown=reconator:reconator . /app
 
 RUN mkdir -p /app/results \
- && chmod -R 755 /app/modules \
- && find /app/modules -type f \( -name "*.sh" -o -name "clickjacking" -o -name "corstest" \) -exec chmod +x {} +
+ && chown -R reconator:reconator /app/results
 
 ENV PYTHONPATH=/app \
-    MODULES_DIR=/app/modules \
     RESULTS_DIR=/app/results
 
 EXPOSE 8000
+
+USER 10001:10001
 
 CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000", "--workers", "2", "--timeout", "120"]

@@ -1,6 +1,6 @@
 {
   "name": "Reconator",
-  "description": "Automated reconnaissance framework — FastAPI + React + shadcn/ui",
+  "description": "Result-driven reconnaissance knowledge framework — FastAPI, PostgreSQL, workers, and React",
   "repository": "https://github.com/gokulapap/Reconator",
   "logo": "https://i.imgur.com/OuplaeQ.png",
   "keywords": ["python", "fastapi", "react", "recon", "automation", "security"],
@@ -13,10 +13,14 @@
     { "plan": "heroku-postgresql:essential-0" }
   ],
   "env": {
+    "APP_ENV": {
+      "description": "Runtime environment marker.",
+      "value": "production"
+    },
     "ADMIN_API_KEY": {
-      "description": "When set, mutations require X-API-Key header. Strongly recommended in prod. Generate with: openssl rand -hex 32",
+      "description": "Required API key protecting mutations and reconnaissance intelligence. Generate with: openssl rand -hex 32",
       "generator": "secret",
-      "required": false
+      "required": true
     },
     "TELEGRAM_API_KEY": {
       "description": "Telegram bot API key from @BotFather. Leave blank to disable notifications.",
@@ -42,9 +46,17 @@
       "description": "Comma-separated origins. Use * for any.",
       "value": "*"
     },
+    "ALLOWED_HOSTS": {
+      "description": "Trusted HTTP Host patterns.",
+      "value": "*.herokuapp.com,localhost,127.0.0.1"
+    },
+    "PROTECT_READ_ENDPOINTS": {
+      "description": "Require the API key for asset, evidence, task, and scan reads.",
+      "value": "true"
+    },
     "WORKER_POLL_INTERVAL_SECONDS": {
       "description": "How often the worker polls for queued targets.",
-      "value": "30"
+      "value": "2"
     }
   }
 }

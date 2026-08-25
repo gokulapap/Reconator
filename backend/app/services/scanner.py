@@ -1,9 +1,7 @@
 import logging
 import os
-import shlex
-import subprocess
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -11,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.metrics import scan_duration_seconds, scans_total
 from app.db.models import ModuleStatus, ScanResult, Target, TargetStatus
+from app.recon.modules.command import run_bounded_command
 from app.services.modules import MODULES, ModuleSpec, get_module
 from app.services.notifier import notifier
 
@@ -18,42 +17,52 @@ log = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _run_module(spec: ModuleSpec, url: str, cwd: str) -> tuple[ModuleStatus, str, str]:
-    cmd = spec.command.format(url=shlex.quote(url))
+    argv = [part.replace("{url}", url) for part in spec.argv]
     log.info("module_start", extra={"module": spec.name, "url": url})
     try:
-        proc = subprocess.run(
-            cmd,
-            shell=True,
+        returncode, stdout, stderr, stdout_truncated, stderr_truncated = run_bounded_command(
+            argv,
             cwd=cwd,
-            capture_output=True,
-            text=True,
+            env={
+                "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+                # Legacy tools must not inherit access paths to operator home
+                # credentials when this compatibility mode runs outside Docker.
+                "HOME": "/tmp",
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "NO_COLOR": "1",
+                "TARGET": url,
+            },
             timeout=spec.timeout,
-            env={**os.environ, "TARGET": url},
+            max_output_bytes=settings.max_raw_output_bytes,
         )
-        output = proc.stdout or ""
-        if proc.stderr.strip():
-            output += f"\n[stderr]\n{proc.stderr}"
-        if proc.returncode == 0:
+        output = stdout.decode("utf-8", errors="replace")
+        decoded_stderr = stderr.decode("utf-8", errors="replace")
+        if decoded_stderr.strip():
+            output += f"\n[stderr]\n{decoded_stderr}"
+        if stdout_truncated or stderr_truncated:
+            output += "\n[reconator] output truncated by safety limit"
+        if returncode == 0:
             return ModuleStatus.completed, output, ""
-        return ModuleStatus.failed, output, f"exit_code={proc.returncode}"
-    except subprocess.TimeoutExpired as exc:
-        return ModuleStatus.failed, exc.stdout or "", f"timeout after {spec.timeout}s"
-    except Exception as exc:  # noqa: BLE001
+        return ModuleStatus.failed, output, f"exit_code={returncode}"
+    except TimeoutError:
+        return ModuleStatus.failed, "", f"timeout after {spec.timeout}s"
+    except Exception as exc:
         return ModuleStatus.failed, "", repr(exc)
 
 
 def _read_legacy_output(url: str) -> str | None:
     path = Path(settings.results_dir) / f"{url}-output.txt"
-    if path.exists():
-        try:
-            return path.read_text(errors="replace")
-        except Exception:  # noqa: BLE001
-            return None
-    return None
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(descriptor, errors="replace") as handle:
+            return handle.read(settings.max_raw_output_bytes + 1)[: settings.max_raw_output_bytes]
+    except (OSError, ValueError):
+        return None
 
 
 def _modules_for(target: Target) -> list[ModuleSpec]:
@@ -74,6 +83,8 @@ def _refresh_cancel(db: Session, target_id: int) -> bool:
 
 
 def run_scan(db: Session, target: Target) -> None:
+    if target.target_kind != "domain":
+        raise ValueError("the deprecated legacy worker accepts domain targets only")
     started = time.perf_counter()
     target.status = TargetStatus.running
     target.started_at = _now()

@@ -19,5 +19,5 @@ def init_sentry() -> None:
             send_default_pii=False,
         )
         log.info("sentry initialised")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("sentry init failed: %s", exc)

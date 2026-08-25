@@ -29,9 +29,7 @@ class _RedactingFormatter(jsonlogger.JsonFormatter):
 def configure_logging() -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(
-        _RedactingFormatter(
-            "%(asctime)s %(levelname)s %(name)s %(request_id)s %(message)s"
-        )
+        _RedactingFormatter("%(asctime)s %(levelname)s %(name)s %(request_id)s %(message)s")
     )
     handler.addFilter(RequestIDLogFilter())
 

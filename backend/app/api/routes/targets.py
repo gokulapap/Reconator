@@ -1,18 +1,20 @@
 import csv
 import io
 import json
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, select, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session
-from app.core.auth import require_api_key
+from app.core.auth import require_api_key, require_read_api_key
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.db.models import Target, TargetStatus
+from app.recon.modules.builtin import register_builtin_modules
+from app.recon.modules.registry import registry
+from app.recon.orchestration import TaskScheduler
 from app.schemas.target import (
     StatsResponse,
     TargetBulkCreate,
@@ -21,10 +23,59 @@ from app.schemas.target import (
     TargetDetail,
     TargetList,
     TargetRead,
+    _normalise_target,
 )
-from app.schemas.target import _normalise_domain  # noqa: PLC2701
 
-router = APIRouter(prefix="/targets", tags=["targets"])
+router = APIRouter(
+    prefix="/targets",
+    tags=["targets"],
+    dependencies=[Depends(require_read_api_key)],
+)
+
+
+def _lock_target_identity(db: Session, target_kind: str, value: str) -> None:
+    """Serialize active-target checks for one root in PostgreSQL."""
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:identity, 0))"),
+            {"identity": f"{target_kind}:{value}"},
+        )
+
+
+def _active_target(db: Session, target_kind: str, value: str) -> Target | None:
+    _lock_target_identity(db, target_kind, value)
+    return db.scalar(
+        select(Target).where(
+            Target.url == value,
+            Target.target_kind == target_kind,
+            Target.status.in_([TargetStatus.queued, TargetStatus.running]),
+        )
+    )
+
+
+def _csv_cell(value: object) -> str:
+    text_value = str(value or "").replace("\r", " ").replace("\n", " ")
+    return f"'{text_value}" if text_value.startswith(("=", "+", "-", "@")) else text_value
+
+
+def _validate_scan_request(
+    *, authorization_confirmed: bool, selected_modules: list[str] | None
+) -> None:
+    if settings.require_authorization_confirmation and not authorization_confirmed:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="explicit authorization confirmation is required before reconnaissance",
+        )
+    if selected_modules:
+        register_builtin_modules()
+        known_names = {module.manifest.name for module in registry.all()}
+        known_capabilities = {module.manifest.capability for module in registry.all()}
+        unknown = sorted(set(selected_modules) - known_names - known_capabilities)
+        if unknown:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"unknown modules or capabilities: {', '.join(unknown)}",
+            )
 
 
 @router.post(
@@ -39,12 +90,11 @@ def create_target(
     payload: TargetCreate,
     db: Session = Depends(db_session),
 ) -> TargetRead:
-    existing = db.scalar(
-        select(Target).where(
-            Target.url == payload.url,
-            Target.status.in_([TargetStatus.queued, TargetStatus.running]),
-        )
+    _validate_scan_request(
+        authorization_confirmed=payload.authorization_confirmed,
+        selected_modules=payload.selected_modules,
     )
+    existing = _active_target(db, payload.target_kind, payload.url)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -52,12 +102,19 @@ def create_target(
         )
     target = Target(
         url=payload.url,
+        target_kind=payload.target_kind,
         status=TargetStatus.queued,
         tags=payload.tags,
         selected_modules=payload.selected_modules,
         notes=payload.notes,
+        profile=payload.profile,
+        scan_config=payload.scan_config,
+        authorization_confirmed=payload.authorization_confirmed,
     )
     db.add(target)
+    db.flush()
+    if settings.recon_engine_enabled:
+        TaskScheduler(db).bootstrap(target)
     db.commit()
     db.refresh(target)
     return TargetRead.model_validate(target)
@@ -74,33 +131,38 @@ def bulk_create(
     payload: TargetBulkCreate,
     db: Session = Depends(db_session),
 ) -> TargetBulkResult:
+    _validate_scan_request(
+        authorization_confirmed=payload.authorization_confirmed,
+        selected_modules=payload.selected_modules,
+    )
     created: list[int] = []
     conflicts: list[str] = []
     errors: dict[str, str] = {}
 
     for raw in payload.urls:
         try:
-            url = _normalise_domain(raw)
+            url = _normalise_target(raw, payload.target_kind)
         except ValueError as exc:
             errors[raw] = str(exc)
             continue
-        existing = db.scalar(
-            select(Target).where(
-                Target.url == url,
-                Target.status.in_([TargetStatus.queued, TargetStatus.running]),
-            )
-        )
+        existing = _active_target(db, payload.target_kind, url)
         if existing:
             conflicts.append(url)
             continue
         target = Target(
             url=url,
+            target_kind=payload.target_kind,
             status=TargetStatus.queued,
             tags=sorted({t.lower() for t in payload.tags}),
             selected_modules=payload.selected_modules,
+            profile=payload.profile,
+            scan_config=payload.scan_config,
+            authorization_confirmed=payload.authorization_confirmed,
         )
         db.add(target)
         db.flush()
+        if settings.recon_engine_enabled:
+            TaskScheduler(db).bootstrap(target)
         created.append(target.id)
     db.commit()
     return TargetBulkResult(created=created, conflicts=conflicts, errors=errors)
@@ -109,9 +171,9 @@ def bulk_create(
 @router.get("", response_model=TargetList)
 def list_targets(
     db: Session = Depends(db_session),
-    status_filter: Optional[TargetStatus] = Query(None, alias="status"),
-    search: Optional[str] = None,
-    tag: Optional[str] = None,
+    status_filter: TargetStatus | None = Query(None, alias="status"),
+    search: str | None = None,
+    tag: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
 ) -> TargetList:
@@ -125,13 +187,16 @@ def list_targets(
         like = f"%{search.lower()}%"
         stmt = stmt.where(func.lower(Target.url).like(like))
         count_stmt = count_stmt.where(func.lower(Target.url).like(like))
-
-    rows = db.scalars(stmt.offset((page - 1) * page_size).limit(page_size * 2)).all()
     if tag:
-        wanted = tag.lower()
-        rows = [t for t in rows if wanted in (t.tags or [])][:page_size]
-    else:
-        rows = rows[:page_size]
+        wanted = tag.lower().strip()
+        if not wanted or len(wanted) > 32:
+            raise HTTPException(status_code=422, detail="invalid tag filter")
+        escaped = wanted.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        tag_condition = cast(Target.tags, String).like(f'%"{escaped}"%', escape="\\")
+        stmt = stmt.where(tag_condition)
+        count_stmt = count_stmt.where(tag_condition)
+
+    rows = db.scalars(stmt.offset((page - 1) * page_size).limit(page_size)).all()
 
     total = db.scalar(count_stmt) or 0
     return TargetList(
@@ -144,14 +209,12 @@ def list_targets(
 
 @router.get("/stats", response_model=StatsResponse)
 def stats(db: Session = Depends(db_session)) -> StatsResponse:
-    rows = db.execute(
-        select(Target.status, func.count()).group_by(Target.status)
-    ).all()
+    rows = db.execute(select(Target.status, func.count()).group_by(Target.status)).all()
     counts = {s.value: 0 for s in TargetStatus}
     for s, c in rows:
         counts[s.value if hasattr(s, "value") else s] = c
 
-    avg_seconds: Optional[float] = None
+    avg_seconds: float | None = None
     durations = db.execute(
         select(Target.started_at, Target.completed_at).where(
             Target.status == TargetStatus.completed,
@@ -160,9 +223,7 @@ def stats(db: Session = Depends(db_session)) -> StatsResponse:
         )
     ).all()
     if durations:
-        total_seconds = sum(
-            (c - s).total_seconds() for s, c in durations if s and c
-        )
+        total_seconds = sum((c - s).total_seconds() for s, c in durations if s and c)
         avg_seconds = round(total_seconds / len(durations), 2)
 
     return StatsResponse(
@@ -180,7 +241,7 @@ def stats(db: Session = Depends(db_session)) -> StatsResponse:
 def export_targets(
     db: Session = Depends(db_session),
     format: str = Query("csv", pattern="^(csv|json)$"),
-    status_filter: Optional[TargetStatus] = Query(None, alias="status"),
+    status_filter: TargetStatus | None = Query(None, alias="status"),
 ) -> Response:
     stmt = select(Target).order_by(Target.created_at.desc())
     if status_filter:
@@ -213,12 +274,12 @@ def export_targets(
         writer.writerow(
             [
                 t.id,
-                t.url,
+                _csv_cell(t.url),
                 t.status.value,
-                "|".join(t.tags or []),
+                _csv_cell("|".join(t.tags or [])),
                 t.created_at.isoformat() if t.created_at else "",
                 t.completed_at.isoformat() if t.completed_at else "",
-                (t.error or "").replace("\n", " "),
+                _csv_cell(t.error),
             ]
         )
     return StreamingResponse(
@@ -256,7 +317,10 @@ def delete_target(target_id: int, db: Session = Depends(db_session)) -> None:
     if target is None:
         raise HTTPException(status_code=404, detail="target not found")
     if target.status == TargetStatus.running:
-        target.cancel_requested = True
+        if settings.recon_engine_enabled:
+            TaskScheduler(db).cancel_pending(target)
+        else:
+            target.cancel_requested = True
         db.commit()
         return
     db.delete(target)
@@ -272,11 +336,12 @@ def cancel_target(target_id: int, db: Session = Depends(db_session)) -> TargetRe
     target = db.get(Target, target_id)
     if target is None:
         raise HTTPException(status_code=404, detail="target not found")
-    if target.status == TargetStatus.running:
-        target.cancel_requested = True
-    elif target.status == TargetStatus.queued:
-        target.status = TargetStatus.cancelled
-        target.completed_at = target.completed_at
+    if target.status in {TargetStatus.running, TargetStatus.queued}:
+        if settings.recon_engine_enabled:
+            TaskScheduler(db).cancel_pending(target)
+        else:
+            target.cancel_requested = True
+            target.status = TargetStatus.cancelled
     else:
         raise HTTPException(
             status_code=409,
@@ -297,14 +362,30 @@ def rescan_target(target_id: int, db: Session = Depends(db_session)) -> TargetRe
     src = db.get(Target, target_id)
     if src is None:
         raise HTTPException(status_code=404, detail="target not found")
+    if src.status in {TargetStatus.queued, TargetStatus.running}:
+        raise HTTPException(status_code=409, detail="cannot rescan an unfinished target")
+    existing = _active_target(db, src.target_kind, src.url)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"target already {existing.status.value} (id={existing.id})",
+        )
     new = Target(
         url=src.url,
+        target_kind=src.target_kind,
         status=TargetStatus.queued,
         tags=list(src.tags or []),
         selected_modules=list(src.selected_modules) if src.selected_modules else None,
         notes=src.notes,
+        profile=src.profile,
+        scan_config=dict(src.scan_config or {}),
+        authorization_confirmed=src.authorization_confirmed,
+        parent_target_id=src.id,
     )
     db.add(new)
+    db.flush()
+    if settings.recon_engine_enabled:
+        TaskScheduler(db).bootstrap(new)
     db.commit()
     db.refresh(new)
     return TargetRead.model_validate(new)

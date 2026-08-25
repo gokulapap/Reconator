@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import Header, HTTPException, status
 
 from app.core.config import settings
@@ -11,9 +13,20 @@ async def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
     """
     if not settings.auth_enabled:
         return
-    if not x_api_key or x_api_key != settings.admin_api_key:
+    if not x_api_key or not secrets.compare_digest(x_api_key, settings.admin_api_key or ""):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid or missing X-API-Key",
             headers={"WWW-Authenticate": "ApiKey"},
         )
+
+
+async def require_read_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Protect reconnaissance intelligence reads when configured.
+
+    Development remains convenient by default. Production Compose enables this
+    guard because assets, evidence, raw output, and scan history are sensitive.
+    """
+    if not settings.protect_read_endpoints:
+        return
+    await require_api_key(x_api_key)

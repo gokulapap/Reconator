@@ -1,20 +1,44 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.services.modules import MODULES
+from app.recon.modules.builtin import register_builtin_modules
+from app.recon.modules.registry import registry
 
 router = APIRouter(prefix="/modules", tags=["modules"])
 
 
 class ModuleInfo(BaseModel):
     name: str
+    version: str
     description: str
     timeout: int
+    capability: str
+    consumes: list[str]
+    produces: list[str]
+    mode: str
+    implementation: str
+    default_profiles: list[str]
+    cache_ttl_seconds: int
+    accepts_derived_inputs: bool
 
 
 @router.get("", response_model=list[ModuleInfo])
 def list_modules() -> list[ModuleInfo]:
+    register_builtin_modules()
     return [
-        ModuleInfo(name=m.name, description=m.description, timeout=m.timeout)
-        for m in MODULES
+        ModuleInfo(
+            name=m.manifest.name,
+            version=m.manifest.version,
+            description=m.manifest.description,
+            timeout=m.manifest.timeout_seconds,
+            capability=m.manifest.capability,
+            consumes=sorted(m.manifest.consumes),
+            produces=sorted(m.manifest.produces),
+            mode=m.manifest.mode.value,
+            implementation=m.manifest.implementation,
+            default_profiles=sorted(m.manifest.default_profiles),
+            cache_ttl_seconds=m.manifest.cache_ttl_seconds,
+            accepts_derived_inputs=m.manifest.accepts_derived_inputs,
+        )
+        for m in registry.all()
     ]

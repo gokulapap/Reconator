@@ -1,146 +1,168 @@
-<h1 align="center">
-  <img src="./static/reconator.png" alt="Reconator" width="420">
-  <br>
-</h1>
+# Reconator 3
 
-<p align="center">
-  <img src="https://img.shields.io/badge/release-v2.1-22d3ee">
-  <img src="https://img.shields.io/badge/api-FastAPI-009688">
-  <img src="https://img.shields.io/badge/web-React%20%2B%20shadcn-0ea5e9">
-  <img src="https://img.shields.io/badge/license-GPL3-red">
-</p>
+Reconator is a result-driven reconnaissance framework for authorized security testing. It treats reconnaissance as a growing knowledge graph—not a sequence of disposable shell commands.
 
-**Reconator** is an automated reconnaissance framework. Add a target — alone or
-in bulk — and the worker runs ~17 recon modules against it (subdomain enum,
-dirbrute, JS/link mining, WAF fingerprint, takeover check, GF triage, and more).
-The dashboard shows per-module output as it lands.
+Every module consumes normalized assets, emits structured assets and relationships, records evidence and provenance, and can create deduplicated follow-up work. The core engine owns scope, scheduling, retries, leases, caching, safety, persistence, and observability; individual tools are replaceable capability implementations.
 
-## Stack
+> Use Reconator only against assets you own or are explicitly authorized to assess. Creating a scan requires an authorization confirmation. Active modules are additionally blocked unless that confirmation is present.
 
-| Layer    | Tech                                                                |
-| -------- | ------------------------------------------------------------------- |
-| API      | FastAPI · SQLAlchemy 2 · Alembic · Pydantic v2                      |
-| Worker   | Python subprocess runner with timeouts + cancellation               |
-| DB       | PostgreSQL 16                                                       |
-| Web      | React 18 · TypeScript · Tailwind · **shadcn/ui** · light/dark theme |
-| Auth     | API key (`X-API-Key`) on writes; open in dev                        |
-| Notify   | Telegram + generic / Slack / Discord webhook                        |
-| Observe  | JSON logs · request IDs · Prometheus `/metrics` · optional Sentry   |
-| Deploy   | Docker Compose · Heroku container stack                             |
+## What it provides
 
-## Quickstart — Docker Compose
+- Canonical asset graph for domains, DNS records, URLs, IPs, CIDRs, ports, services, endpoints, parameters, JavaScript, technologies, certificates, cloud resources, repositories, organizations, ASNs, and namespaced plugin types.
+- Persistent observations, evidence, source/module provenance, typed relationships, timestamps, change snapshots, and scan-to-scan comparisons.
+- Dynamic task generation from discoveries, with priorities, dependencies, branching, retries, exponential backoff, cache replay, cancellation, leases, crash recovery, and per-target concurrency limits.
+- Central default-deny scope engine with exact, subdomain, CIDR, URL-prefix, regex, and exclusion rules. Exclusions always win.
+- Explicit direct-vs-derived scope semantics: a passive module may opt into derived infrastructure enrichment, but derived data never silently authorizes active scanning.
+- Capability-oriented module registry and Python entry-point discovery (`reconator.modules`) so new implementations do not modify the scheduler.
+- Passive, balanced, and active profiles plus per-scan/per-module configuration.
+- FastAPI API, automation CLI, React operations UI, Prometheus metrics, structured logs, request IDs, notifications, and Sentry integration.
+- Horizontally safe PostgreSQL workers using leased tasks and `FOR UPDATE SKIP LOCKED`.
+- Docker Compose production topology with a migration gate, PostgreSQL, API, multiple workers, and an Nginx UI; services run non-root with dropped capabilities and read-only filesystems.
 
-```bash
-git clone https://github.com/gokulapap/Reconator
-cd Reconator
-cp .env.example .env       # optional: add Telegram / webhook keys / API key
-docker compose up --build
+The bundled v3 modules establish the framework loop with DNS A/AAAA/CNAME/NS/MX/TXT/PTR intelligence, certificate-transparency discovery, HTTP probing and HTML surface extraction, bounded JavaScript endpoint/parameter analysis, URL modeling, bounded CIDR expansion, TCP connect discovery, and RDAP ownership enrichment. Additional tools belong behind module contracts rather than in the core.
+
+## Architecture
+
+```text
+authorized seed + scope
+         │
+         ▼
+  normalize / identify ───────► persistent asset graph
+         │                              │
+         ▼                              ▼
+ capability consumers ◄──── observations + relationships
+         │                              │
+         ▼                              │
+ priority task queue ──lease──► module execution
+         ▲                              │
+         └──── new normalized results ◄─┘
 ```
 
-| Service   | URL                        |
-| --------- | -------------------------- |
-| Web UI    | http://localhost:3000      |
-| API docs  | http://localhost:8000/docs |
-| Metrics   | http://localhost:8000/api/v1/metrics |
+The API never executes reconnaissance itself. It creates scan state and tasks. Independent workers claim bounded work; the UI and CLI are clients of the same API. See [architecture](docs/architecture.md), [module development](docs/module-development.md), and [security model](docs/security.md).
 
-## Quickstart — Heroku
+## Quick start with Docker Compose
 
-[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/gokulapap/Reconator)
-
-Or via CLI (uses `heroku.yml` container stack — single image serves UI + API,
-worker dyno runs the queue):
+Requirements: Docker Engine with Compose v2.
 
 ```bash
-heroku create my-reconator --stack=container
-heroku addons:create heroku-postgresql:essential-0
-heroku config:set ADMIN_API_KEY=$(openssl rand -hex 32)   # recommended
-heroku config:set TELEGRAM_API_KEY=... TELEGRAM_CHAT_ID=...   # optional
-git push heroku master
-heroku ps:scale web=1 worker=1
+cp .env.example .env
+# Replace ADMIN_API_KEY and POSTGRES_PASSWORD in .env with long random values.
+docker compose up --build -d
+docker compose ps
 ```
 
-## Local development
+Open `http://localhost:3000`, then enter `ADMIN_API_KEY` on the Settings page. API documentation is at `http://localhost:8000/docs`.
+
+The API and UI bind to loopback by default. Put them behind an authenticated TLS reverse proxy before exposing them to a network.
+
+Create a scan through the API:
 
 ```bash
-# api
-cd backend && pip install -r requirements.txt
-uvicorn app.main:app --reload
-
-# worker (separate shell)
-python -m app.worker
-
-# web (separate shell)
-cd frontend && npm install && npm run dev   # proxies /api → :8000
-
-# tests + lint
-cd backend && pytest && ruff check .
+curl --request POST http://127.0.0.1:8000/api/v1/targets \
+  --header "X-API-Key: $RECONATOR_API_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "target_kind": "domain",
+    "url": "authorized.example",
+    "profile": "passive",
+    "authorization_confirmed": true
+  }'
 ```
 
-## Features
+`target_kind` accepts `domain`, `url`, `ip_address`, or `cidr`. The root seed creates the narrowest useful default scope. Add exclusions or explicit infrastructure inclusions through the Scope tab/API before using active modules.
 
-- **Bulk add** — paste up to 500 domains; per-row error / conflict report
-- **Tags + filtering** — tag targets, filter the listing by tag
-- **Module selection** — schedule only the modules you want per target
-- **Cancel + rescan** — stop a running target between modules; one-click rescan
-- **Per-module results** — each check's output is its own row, with status, timing, errors
-- **In-output search + highlight** — filter giant subdomain dumps in place
-- **CSV / JSON export** — pull the whole queue out of the API
-- **Live dashboard** — counts, average scan duration, recent activity
-- **Optional API-key auth** — set `ADMIN_API_KEY`, all mutations require `X-API-Key`
-- **Rate limiting** — slowapi caps writes (defaults: 20/min single, 5/min bulk)
-- **Prometheus metrics** — request rate, latency, scan counts, queue depth
-- **Telegram + webhook fan-out** — notifier abstraction, both can run together
-- **Light + dark UI** — preference stored per browser
+Stop the stack without deleting PostgreSQL data:
 
-## API surface
+```bash
+docker compose down
+```
 
-| Method | Path                                             | Auth | Purpose                |
-| ------ | ------------------------------------------------ | ---- | ---------------------- |
-| GET    | `/api/v1/targets`                                | —    | List + filter (status, search, tag) |
-| POST   | `/api/v1/targets`                                | ✓    | Queue a domain         |
-| POST   | `/api/v1/targets/bulk`                           | ✓    | Queue many at once     |
-| GET    | `/api/v1/targets/stats`                          | —    | Counts + avg duration  |
-| GET    | `/api/v1/targets/export?format=csv\|json`        | —    | Bulk export            |
-| GET    | `/api/v1/targets/{id}`                           | —    | Detail + module summary |
-| DELETE | `/api/v1/targets/{id}`                           | ✓    | Delete (or cancel if running) |
-| POST   | `/api/v1/targets/{id}/cancel`                    | ✓    | Cancel queued / running |
-| POST   | `/api/v1/targets/{id}/rescan`                    | ✓    | Re-queue with same tags / modules |
-| GET    | `/api/v1/targets/{id}/results`                   | —    | All module outputs     |
-| GET    | `/api/v1/targets/{id}/results/{module}`          | —    | One module's output    |
-| GET    | `/api/v1/targets/{id}/results/{module}/download` | —    | `.txt` download        |
-| GET    | `/api/v1/modules`                                | —    | Available modules      |
-| GET    | `/api/v1/system/info`                            | —    | Version + auth + notifier status |
-| POST   | `/api/v1/system/test-notify`                     | ✓    | Fire a test notification |
-| GET    | `/api/v1/health` · `/ready` · `/metrics`         | —    | Probes + Prometheus    |
+## CLI
 
-OpenAPI at `/docs`.
+Run the client from the backend environment or container:
 
-## Configuration
+```bash
+export RECONATOR_API_KEY='your-api-key'
+python -m app.cli scan authorized.example --kind domain --profile passive --authorized --wait
+python -m app.cli status 1
+python -m app.cli assets 1 --kind url
+python -m app.cli events 1
+python -m app.cli modules
+```
 
-| Env var                          | Default     | Notes                          |
-| -------------------------------- | ----------- | ------------------------------ |
-| `DATABASE_URL`                   | _composed_  | `postgresql://…` (Heroku-style ok) |
-| `ADMIN_API_KEY`                  | unset       | When set, mutations require `X-API-Key` |
-| `RATE_LIMIT_WRITES`              | `20/minute` | slowapi expression             |
-| `RATE_LIMIT_BULK`                | `5/minute`  |                                |
-| `TELEGRAM_API_KEY` / `_CHAT_ID`  | unset       | Disables telegram if blank     |
-| `WEBHOOK_URL` / `WEBHOOK_KIND`   | unset / `generic` | `generic` \| `slack` \| `discord` |
-| `SENTRY_DSN`                     | unset       | Enables Sentry if set          |
-| `WORKER_POLL_INTERVAL_SECONDS`   | `30`        |                                |
-| `MODULE_TIMEOUT_SECONDS`         | `1800`      | Per-module hard timeout        |
-| `CORS_ORIGINS`                   | `*`         | Comma-separated                |
+`--authorized` is deliberately required for `scan`. Use `--json` for automation.
 
-## What changed from v1
+## Profiles and module selection
 
-- Flask → FastAPI; SQL injection vectors gone (parameterized SQLAlchemy)
-- Embedded HTML → React + shadcn/ui dashboard
-- Single base64 blob in DB → per-module rows with status / timestamps / errors
-- `cron.py` polling loop → worker with row-locking, graceful shutdown, cancellation
-- Manual Heroku buildpacks → container stack via `heroku.yml`
-- Added: API-key auth, rate limiting, request IDs, Prometheus, Sentry hook,
-  bulk import, tags, rescan, cancel, webhook notifier, CSV/JSON export
+- `passive`: public data sources and local transformations.
+- `balanced`: passive work plus low-impact active discovery such as DNS and HTTP probing.
+- `active`: explicitly authorized active capabilities, including bounded service discovery.
 
-## Disclaimer
+If `selected_modules` is absent, profile defaults apply. If supplied, it is an allowlist of module names or capability names. Configuration precedence is global environment → scan `defaults` → scan `modules.<module-name>`.
 
-For authorized testing only. Use on systems you own or have permission to assess.
-Released under GPL-3.0.
+Example bounded module configuration:
+
+```json
+{
+  "scan_config": {
+    "defaults": {"user_agent": "Authorized-Research/1.0"},
+    "modules": {
+      "network.cidr_expand": {"max_cidr_addresses": 64},
+      "network.tcp_connect": {"ports": [80, 443, 8443], "connect_timeout": 1}
+    }
+  }
+}
+```
+
+## Important API surfaces
+
+- `POST /api/v1/targets` and `/targets/bulk` — create authorized scans.
+- `GET /api/v1/targets/{id}/assets` — canonical scan assets.
+- `GET /api/v1/targets/{id}/graph` — graph nodes and typed edges.
+- `GET /api/v1/targets/{id}/tasks` — task state, attempts, parents, cache hits, and errors.
+- `GET /api/v1/targets/{id}/events` — execution timeline.
+- `GET|POST|DELETE /api/v1/targets/{id}/scope` — inspect and reconcile policy.
+- `GET /api/v1/targets/{id}/compare/{baseline}` — incremental changes.
+- `GET /api/v1/knowledge/stats` and `/metrics` — operational visibility.
+
+Production Compose protects reconnaissance reads and writes with `X-API-Key`. Health endpoints remain available for orchestration.
+
+## Development and verification
+
+```bash
+uv venv .venv --python 3.11
+uv pip install --python .venv/bin/python -r backend/requirements-dev.txt
+cd backend
+../.venv/bin/ruff check .
+../.venv/bin/ruff format --check .
+../.venv/bin/python -m pytest
+../.venv/bin/python -m benchmarks.benchmark_core
+
+cd ../frontend
+npm ci
+npm audit --audit-level=high
+npm run build
+```
+
+Database changes are migration-owned:
+
+```bash
+cd backend
+DATABASE_URL='postgresql+psycopg://…' alembic upgrade head
+```
+
+CI verifies lint, tests, a real PostgreSQL migration, Python/npm vulnerability audits, both service images, the Compose topology, health endpoints, reverse proxying, and protected reads.
+
+## Extending Reconator
+
+Implement `ReconModule`, declare a truthful `ModuleManifest`, return normalized emissions, and register an entry point in the `reconator.modules` group. Command-backed integrations receive argv elements directly; shell interpreters are rejected, process groups are timed out, and retained stdout/stderr is bounded.
+
+Read [module-development.md](docs/module-development.md) before adding a capability. Coverage decisions and remaining high-value work are tracked in [coverage-and-roadmap.md](docs/coverage-and-roadmap.md), while [competitive-analysis.md](docs/competitive-analysis.md) explains Reconator’s architectural positioning.
+
+## Legacy directory
+
+The historical `modules/` scripts remain in the repository for migration reference, but the default v3 engine and production images do not execute or package them. Their raw, sequential outputs do not satisfy the framework’s scope, normalization, provenance, or isolation contracts. Port useful behavior into v3 modules and add regression fixtures before enabling it.
+
+## License
+
+GPL-3.0; see [LICENSE](LICENSE).

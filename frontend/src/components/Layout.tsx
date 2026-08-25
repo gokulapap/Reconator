@@ -32,7 +32,7 @@ export function Layout() {
           >
             <Radar className="h-5 w-5 text-primary" />
             <span>Reconator</span>
-            <span className="text-xs text-muted-foreground font-normal">v2</span>
+            <span className="text-xs text-muted-foreground font-normal">v3</span>
           </Link>
           <nav className="flex items-center gap-1 text-sm">
             {nav.map((n) => (

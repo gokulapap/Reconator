@@ -9,6 +9,8 @@
 .env.*
 !.env.example
 results/
+modules/
+.gf/
 *.md
 !README.md
 LICENSE

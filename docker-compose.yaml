@@ -1,0 +1,182 @@
+name: reconator
+
+x-backend-environment: &backend-environment
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-reconator}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-reconator}
+  APP_ENV: ${APP_ENV:-production}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  ADMIN_API_KEY: ${ADMIN_API_KEY:?set ADMIN_API_KEY in .env}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,reconator.local,api}
+  REQUIRE_AUTHORIZATION_CONFIRMATION: "true"
+  PROTECT_READ_ENDPOINTS: ${PROTECT_READ_ENDPOINTS:-true}
+  ALLOW_PRIVATE_TARGETS: ${ALLOW_PRIVATE_TARGETS:-false}
+  MAX_TASKS_PER_SCAN: ${MAX_TASKS_PER_SCAN:-10000}
+  MAX_ASSET_EMISSIONS_PER_TASK: ${MAX_ASSET_EMISSIONS_PER_TASK:-20000}
+  MAX_RELATIONSHIP_EMISSIONS_PER_TASK: ${MAX_RELATIONSHIP_EMISSIONS_PER_TASK:-20000}
+  MAX_EMISSION_METADATA_BYTES: ${MAX_EMISSION_METADATA_BYTES:-65536}
+  MAX_RAW_OUTPUT_BYTES: ${MAX_RAW_OUTPUT_BYTES:-2000000}
+  MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-1000000}
+  RATE_LIMIT_WRITES: ${RATE_LIMIT_WRITES:-20/minute}
+  RATE_LIMIT_BULK: ${RATE_LIMIT_BULK:-5/minute}
+  TELEGRAM_API_KEY: ${TELEGRAM_API_KEY:-}
+  TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+  WEBHOOK_URL: ${WEBHOOK_URL:-}
+  WEBHOOK_KIND: ${WEBHOOK_KIND:-generic}
+  ALLOW_PRIVATE_WEBHOOKS: ${ALLOW_PRIVATE_WEBHOOKS:-false}
+  SENTRY_DSN: ${SENTRY_DSN:-}
+
+x-backend-service: &backend-service
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+  image: reconator/backend:${RECONATOR_VERSION:-local}
+  environment: *backend-environment
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=256m,mode=1777
+  volumes:
+    - results:/app/results
+  networks:
+    - backend
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-reconator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-reconator}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+        reservations:
+          memory: 256m
+
+  migrate:
+    <<: *backend-service
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *backend-service
+    command:
+      - gunicorn
+      - app.main:app
+      - --worker-class
+      - uvicorn.workers.UvicornWorker
+      - --bind
+      - 0.0.0.0:8000
+      - --workers
+      - ${WEB_CONCURRENCY:-2}
+      - --timeout
+      - "120"
+      - --access-logfile
+      - "-"
+    ports:
+      - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8000}:8000"
+    networks:
+      - backend
+      - edge
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/ready', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+        reservations:
+          memory: 256m
+
+  worker:
+    <<: *backend-service
+    command: ["python", "-m", "app.worker"]
+    environment:
+      <<: *backend-environment
+      WORKER_POLL_INTERVAL_SECONDS: ${WORKER_POLL_INTERVAL_SECONDS:-2}
+      MAX_CONCURRENT_TASKS: ${MAX_CONCURRENT_TASKS:-4}
+      MAX_CONCURRENT_TASKS_PER_TARGET: ${MAX_CONCURRENT_TASKS_PER_TARGET:-2}
+      TASK_LEASE_SECONDS: ${TASK_LEASE_SECONDS:-180}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 2m
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+        reservations:
+          memory: 256m
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: reconator/web:${RECONATOR_VERSION:-local}
+    init: true
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:size=64m,mode=1777
+      - /var/run:size=16m,mode=1777
+    ports:
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-3000}:8080"
+    networks:
+      - edge
+    depends_on:
+      api:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256m
+
+networks:
+  backend:
+    internal: true
+  edge:
+
+volumes:
+  db-data:
+  results:
