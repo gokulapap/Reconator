@@ -1,66 +1,96 @@
 # Reconator 3
 
-Reconator is a result-driven reconnaissance framework for authorized security testing. It treats reconnaissance as a growing knowledge graph—not a sequence of disposable shell commands.
+Reconator helps you find and track the public parts of a web target during an approved security test. It can find names, addresses, web pages, ports, services, JavaScript files, API paths, and links between them.
 
-Every module consumes normalized assets, emits structured assets and relationships, records evidence and provenance, and can create deduplicated follow-up work. The core engine owns scope, scheduling, retries, leases, caching, safety, persistence, and observability; individual tools are replaceable capability implementations.
+Reconator runs each check as a separate task. A new result can start more useful tasks. Results are cleaned, joined, saved, and reused instead of being left as separate tool output files.
 
-> Use Reconator only against assets you own or are explicitly authorized to assess. Creating a scan requires an authorization confirmation. Active modules are additionally blocked unless that confirmation is present.
+> **Use Reconator only on targets you own or have clear permission to test.** You must confirm permission when you create a scan. Reconator checks the allowed target list before it runs a task. You are still responsible for setting the correct allowed target list and safe scan limits.
 
-## What it provides
+## What works today
 
-- Canonical asset graph for domains, DNS records, URLs, IPs, CIDRs, ports, services, endpoints, parameters, JavaScript, technologies, certificates, cloud resources, repositories, organizations, ASNs, and namespaced plugin types.
-- Persistent observations, evidence, source/module provenance, typed relationships, timestamps, change snapshots, and scan-to-scan comparisons.
-- Dynamic task generation from discoveries, with priorities, dependencies, branching, retries, exponential backoff, cache replay, cancellation, leases, crash recovery, and per-target concurrency limits.
-- Central default-deny scope engine with exact, subdomain, CIDR, URL-prefix, regex, and exclusion rules. Exclusions always win.
-- Explicit direct-vs-derived scope semantics: a passive module may opt into derived infrastructure enrichment, but derived data never silently authorizes active scanning.
-- Capability-oriented module registry and Python entry-point discovery (`reconator.modules`) so new implementations do not modify the scheduler.
-- Passive, balanced, and active profiles plus per-scan/per-module configuration.
-- FastAPI API, automation CLI, React operations UI, Prometheus metrics, structured logs, request IDs, notifications, and Sentry integration.
-- Horizontally safe PostgreSQL workers using leased tasks and `FOR UPDATE SKIP LOCKED`.
-- Docker Compose production topology with a migration gate, PostgreSQL, API, multiple workers, an authenticated isolated tool plane, and an Nginx UI; services run non-root with dropped capabilities and read-only filesystems.
+Reconator can:
 
-The bundled modules establish the framework loop with DNS A/AAAA/CNAME/NS/MX/TXT/PTR intelligence, certificate-transparency discovery, HTTP/HTML extraction, JavaScript endpoint/parameter analysis, URL modeling, bounded CIDR expansion, TCP discovery, and RDAP enrichment. A separate constrained toolbox adds pinned Subfinder, URLFinder, HTTPX, Katana, Naabu connect scanning, JSLuice, AlterX, and CDNCheck implementations. Subfinder uses all configured sources by default, merges provider attribution per hostname, and converges with independent CT results through canonical deduplication. All tool outputs still pass through Reconator's normalization, scope, provenance, graph, and scheduling contracts.
+- Find subdomains with Subfinder and the public certificate log service Cert Spotter.
+- Read A, AAAA, CNAME, NS, MX, TXT, and PTR DNS records.
+- Find old URLs with URLFinder.
+- Check web servers with HTTPX and Reconator's built-in HTTP check.
+- Record status codes, page titles, redirects, website certificate details, technologies, hosting network details, and network owner details when a tool returns them.
+- Crawl allowed web pages with Katana and read links, forms, scripts, paths, and input names.
+- Read JavaScript with JSLuice and Reconator's built-in parser to find likely API paths and input names.
+- Find open TCP ports with Naabu connect scans and a small built-in TCP check.
+- Create likely subdomain names with AlterX, then pass them to DNS checks before other work uses them.
+- Match IP addresses to known content delivery, cloud, and web firewall ranges with CDNCheck.
+- Look up public IP ownership records with RDAP.
+- Expand small, allowed network ranges written in CIDR form. The scan setting limits how many addresses it may create.
+- Save where each result came from, the supporting output, when it was found, and which scan found it.
+- Show added, changed, and removed results between scans.
 
-## Architecture
+These tools do not run by themselves. Reconator decides when a tool may run, checks scope, limits parallel work, and changes tool output into the same result format.
 
-```text
-authorized seed + scope
-         │
-         ▼
-  normalize / identify ───────► persistent asset graph
-         │                              │
-         ▼                              ▼
- capability consumers ◄──── observations + relationships
-         │                              │
-         ▼                              │
- priority task queue ──lease──► module execution
-         ▲                              │
-         └──── new normalized results ◄─┘
-```
+## How a scan works
 
-The API never executes reconnaissance itself. It creates scan state and tasks. Independent workers claim bounded work; the UI and CLI are clients of the same API. See [architecture](docs/architecture.md), [module development](docs/module-development.md), and [security model](docs/security.md).
+1. You add a target, confirm permission, and choose a scan profile.
+2. Reconator creates the first tasks and puts them in the task queue.
+3. Workers take ready tasks. Independent tasks can run at the same time.
+4. Reconator cleans each result and removes duplicates.
+5. It saves results and links. For example, a domain can link to an IP, an IP to a port, and a web page to a JavaScript file.
+6. Useful new results create follow-up tasks when the profile and scope allow them.
+7. Failed tasks can retry without stopping the whole scan.
 
-## Quick start with Docker Compose
+The database keeps the task state. If a worker stops, another worker can take unfinished work after its task lock expires. Finished tasks are not repeated unless their saved result is too old or the input changed.
 
-Requirements: Docker Engine with Compose v2.
+## Start with Docker Compose
+
+You need Docker Engine with Docker Compose v2.
 
 ```bash
 cp .env.example .env
-# Replace ADMIN_API_KEY, POSTGRES_PASSWORD, and TOOLBOX_SHARED_SECRET
-# with independent long random values.
+```
+
+Open `.env` and replace these three required values with different long random values:
+
+- `ADMIN_API_KEY`
+- `POSTGRES_PASSWORD`
+- `TOOLBOX_SHARED_SECRET`
+
+Do not commit your `.env` file.
+
+Build and start Reconator:
+
+```bash
 docker compose up --build -d
 docker compose ps
 ```
 
-Open `http://localhost:3000`, then enter `ADMIN_API_KEY` on the Settings page. API documentation is at `http://localhost:8000/docs`.
+Open the web dashboard at [http://localhost:3000](http://localhost:3000). Open **Settings** and enter the value you used for `ADMIN_API_KEY`.
 
-The API and UI bind to loopback by default. The toolbox has no published host port and no database-network access. Put the user-facing services behind an authenticated TLS reverse proxy before exposing them to a network.
+The API help page is at [http://localhost:8000/docs](http://localhost:8000/docs).
 
-Create a scan through the API:
+Stop Reconator without deleting saved database data:
+
+```bash
+docker compose down
+```
+
+The API and web dashboard listen only on your computer by default. Read [Security](docs/security.md) before making either service available on a network.
+
+## Create a scan in the web dashboard
+
+1. Open **Targets**.
+2. Enter a domain, URL, IP address, or CIDR range.
+3. Choose `passive`, `balanced`, or `active`.
+4. Confirm that you have permission to test the target.
+5. Start the scan.
+
+You can also add several targets from the bulk form. Review the **Scope** tab before using active checks. Exclusion rules always win.
+
+## Create a scan with the API
+
+Use the same value as `ADMIN_API_KEY` in the `X-API-Key` header:
 
 ```bash
 curl --request POST http://127.0.0.1:8000/api/v1/targets \
-  --header "X-API-Key: $RECONATOR_API_KEY" \
+  --header 'X-API-Key: your-admin-api-key' \
   --header 'Content-Type: application/json' \
   --data '{
     "target_kind": "domain",
@@ -70,104 +100,203 @@ curl --request POST http://127.0.0.1:8000/api/v1/targets \
   }'
 ```
 
-`target_kind` accepts `domain`, `url`, `ip_address`, or `cidr`. The root seed creates the narrowest useful default scope. Add exclusions or explicit infrastructure inclusions through the Scope tab/API before using active modules.
+`target_kind` can be `domain`, `url`, `ip_address`, or `cidr`.
 
-Stop the stack without deleting PostgreSQL data:
+Useful API paths include:
+
+- `GET /api/v1/targets/{id}` for scan status.
+- `GET /api/v1/targets/{id}/assets` for results.
+- `GET /api/v1/targets/{id}/graph` for result links.
+- `GET /api/v1/targets/{id}/tasks` for task status and errors.
+- `GET /api/v1/targets/{id}/events` for the scan timeline.
+- `GET /api/v1/targets/{id}/compare/{older_id}` for changes between scans.
+- `GET /api/v1/targets/{id}/scope` for scope rules.
+- `GET /api/v1/metrics` for service measurements.
+
+## Create a scan with the CLI
+
+The CLI talks to the same API as the web dashboard. You can run it inside the API container:
 
 ```bash
-docker compose down
+docker compose exec api python -m app.cli \
+  --api-url http://127.0.0.1:8000 \
+  --api-key 'your-admin-api-key' \
+  scan authorized.example \
+  --kind domain \
+  --profile passive \
+  --authorized \
+  --wait
 ```
 
-## CLI
-
-Run the client from the backend environment or container:
+Other CLI commands:
 
 ```bash
-export RECONATOR_API_KEY='your-api-key'
-python -m app.cli scan authorized.example --kind domain --profile passive --authorized --wait
-python -m app.cli status 1
-python -m app.cli assets 1 --kind url
-python -m app.cli events 1
-python -m app.cli modules
+docker compose exec api python -m app.cli --api-key 'your-admin-api-key' status 1
+docker compose exec api python -m app.cli --api-key 'your-admin-api-key' assets 1 --kind url
+docker compose exec api python -m app.cli --api-key 'your-admin-api-key' events 1
+docker compose exec api python -m app.cli --api-key 'your-admin-api-key' summary 1
+docker compose exec api python -m app.cli --api-key 'your-admin-api-key' modules
 ```
 
-`--authorized` is deliberately required for `scan`. Use `--json` for automation.
+The `scan` command will not start without `--authorized`. Add `--json` before the command name when another program needs to read the output.
 
-## Profiles and module selection
+## Scan profiles
 
-- `passive`: public data sources and local transformations.
-- `balanced`: passive work plus low-impact active discovery such as DNS and HTTP probing.
-- `active`: explicitly authorized active capabilities, including bounded service discovery.
+- `passive` uses public data services and saved data. It does not run direct web or port checks against the target by default.
+- `balanced` adds lower-impact DNS, web, and JavaScript checks.
+- `active` also allows crawling, port checks, and name guessing. Use it only when your permission covers that work.
 
-If `selected_modules` is absent, profile defaults apply. If supplied, it is an allowlist of module names or capability names. Configuration precedence is global environment → scan `defaults` → scan `modules.<module-name>`.
+You can choose named modules instead of using all modules in a profile. Scan settings can also set timeouts, port lists, page limits, and other module limits. See [Module development](docs/module-development.md) for the module rules and setting format.
 
-Example bounded module configuration:
+## Results and history
 
-```json
-{
-  "scan_config": {
-    "defaults": {"user_agent": "Authorized-Research/1.0"},
-    "modules": {
-      "network.cidr_expand": {"max_cidr_addresses": 64},
-      "network.tcp_connect": {"ports": [80, 443, 8443], "connect_timeout": 1}
-    }
-  }
-}
+The scan page has these views:
+
+- **Overview** shows totals and current progress.
+- **Assets** shows each found item, its source, supporting details, and score.
+- **Graph** shows how found items are linked.
+- **Changes** compares the scan with an older scan of the same target.
+- **Tasks** shows queued, running, finished, retried, skipped, and failed work.
+- **Timeline** shows scan events in time order.
+- **Scope** shows what Reconator may and may not test.
+
+Reconator keeps old results in PostgreSQL. A later scan can use saved results, avoid some repeated work, and show what changed.
+
+## Workers and the toolbox
+
+The Docker setup runs these services:
+
+- `db` stores targets, tasks, results, links, and history.
+- `migrate` updates the database format before the other services start.
+- `api` serves the web dashboard, CLI, and other programs.
+- `worker` runs scan tasks. The default setup starts two workers.
+- `toolbox` contains the outside recon tools. Only workers can ask it to run a tool.
+- `web` serves the dashboard and sends API requests to `api`.
+
+Add workers when the database and machine have enough CPU, memory, and network room:
+
+```bash
+docker compose up -d --scale worker=4
 ```
 
-## Important API surfaces
+More workers do not remove the scan limits. `MAX_CONCURRENT_TASKS`, `MAX_CONCURRENT_TASKS_PER_TARGET`, and tool limits still control load. Start with small values and raise them only after watching the target and your machine.
 
-- `POST /api/v1/targets` and `/targets/bulk` — create authorized scans.
-- `GET /api/v1/targets/{id}/assets` — canonical scan assets.
-- `GET /api/v1/targets/{id}/assets/{asset_id}` — evidence, provenance, snapshots, and graph pivots for one observed asset.
-- `GET /api/v1/targets/{id}/knowledge-summary` — per-scan entity, relationship, source, and task distributions.
-- `GET /api/v1/targets/{id}/graph` — graph nodes and typed edges.
-- `GET /api/v1/targets/{id}/tasks` — task state, attempts, parents, cache hits, and errors.
-- `GET /api/v1/targets/{id}/events` — execution timeline.
-- `GET|POST|DELETE /api/v1/targets/{id}/scope` — inspect and reconcile policy.
-- `GET /api/v1/targets/{id}/compare/{baseline}` — incremental changes.
-- `GET /api/v1/knowledge/stats` and `/metrics` — operational visibility.
+The toolbox image includes fixed versions of Subfinder, URLFinder, HTTPX, Katana, Naabu, JSLuice, AlterX, and CDNCheck. The toolbox runs without root access, has a read-only file system, has no host port, and cannot reach the database network. Tool output is treated as unsafe input and is checked by the worker.
 
-Production Compose protects reconnaissance reads and writes with `X-API-Key`. Health endpoints remain available for orchestration.
+## Common settings
 
-## Development and verification
+Edit `.env`, then restart the affected services after a change.
+
+| Setting | What it changes |
+| --- | --- |
+| `API_PORT`, `WEB_PORT` | Ports used on your computer. |
+| `API_BIND_ADDRESS`, `WEB_BIND_ADDRESS` | Addresses used on your computer. Keep `127.0.0.1` unless you have a safe proxy. |
+| `WORKER_REPLICAS` | Number of workers started by Compose. |
+| `MAX_CONCURRENT_TASKS` | Tasks one worker may run at the same time. |
+| `MAX_CONCURRENT_TASKS_PER_TARGET` | Tasks one worker may run at the same time for one target. |
+| `TOOLBOX_MAX_CONCURRENT` | Outside tools the toolbox may run at the same time. |
+| `MAX_TASKS_PER_SCAN` | Total task limit for one scan. |
+| `ALLOW_PRIVATE_TARGETS` | Allows private or local addresses when set to `true`. Leave it `false` unless your approved test needs them. |
+| `PROTECT_READ_ENDPOINTS` | Requires the API key when reading results. Keep it `true` for normal use. |
+| `LOG_LEVEL` | Log detail, such as `INFO` or `DEBUG`. |
+| `TELEGRAM_API_KEY`, `TELEGRAM_CHAT_ID` | Optional Telegram messages. |
+| `WEBHOOK_URL`, `WEBHOOK_KIND` | Optional generic, Slack, or Discord messages. |
+| `SENTRY_DSN` | Optional error reports to Sentry. |
+
+See [.env.example](.env.example) for every Docker setting and its default value.
+
+## Run tests
+
+Backend tests use Python 3.11 and `uv`:
 
 ```bash
 uv venv .venv --python 3.11
 uv pip install --python .venv/bin/python -r backend/requirements-dev.txt
 cd backend
-../.venv/bin/ruff check .
-../.venv/bin/ruff format --check .
+../.venv/bin/ruff check . ../toolbox
+../.venv/bin/ruff format --check . ../toolbox
 ../.venv/bin/python -m pytest
 ../.venv/bin/python -m benchmarks.benchmark_core
+```
 
-cd ../frontend
-npm ci
+Frontend tests use Node.js 22:
+
+```bash
+cd frontend
+npm ci --no-audit --no-fund
+node scripts/validate-lock-registry.mjs
 npm audit --audit-level=high
-npm test
 npm run lint
+npm test
 npm run build
 ```
 
-Database changes are migration-owned:
+Check the Docker file without starting services:
 
 ```bash
-cd backend
-DATABASE_URL='postgresql+psycopg://…' alembic upgrade head
+docker compose config --quiet
 ```
 
-CI verifies lint, tests, a real PostgreSQL migration, Python/npm vulnerability audits, both service images, the Compose topology, health endpoints, reverse proxying, and protected reads.
+## Common problems
 
-## Extending Reconator
+### A page or API request says `401`
 
-Implement `ReconModule`, declare a truthful `ModuleManifest`, return normalized emissions, and register an entry point in the `reconator.modules` group. Command-backed integrations receive argv elements directly; shell interpreters are rejected, process groups are timed out, and retained stdout/stderr is bounded.
+Enter the correct `ADMIN_API_KEY` on the dashboard **Settings** page. API and CLI requests must send the same value.
 
-Read [module-development.md](docs/module-development.md) before adding a capability. The current methodology, ecosystem evidence, tool selection, overlap decisions, and full capability map are in [research-and-capability-map.md](docs/research-and-capability-map.md). Remaining high-value work is tracked in [coverage-and-roadmap.md](docs/coverage-and-roadmap.md), while [competitive-analysis.md](docs/competitive-analysis.md) explains Reconator’s architectural positioning.
+### A scan has no running tasks
 
-## Legacy directory
+Check the workers and toolbox:
 
-The historical `modules/` scripts remain in the repository for migration reference, but the default v3 engine and production images do not execute or package them. Their raw, sequential outputs do not satisfy the framework’s scope, normalization, provenance, or isolation contracts. Port useful behavior into v3 modules and add regression fixtures before enabling it.
+```bash
+docker compose ps
+docker compose logs worker
+docker compose logs toolbox
+```
+
+Also check the scan's **Scope** and **Tasks** tabs. A task may be outside scope, blocked by the chosen profile, waiting for another task, or already completed from saved data.
+
+### A service does not become ready
+
+Read its logs:
+
+```bash
+docker compose logs db
+docker compose logs migrate
+docker compose logs api
+docker compose logs web
+```
+
+Make sure all three required values in `.env` were changed from the example values.
+
+### Port 3000 or 8000 is already in use
+
+Change `WEB_PORT` or `API_PORT` in `.env`, then run:
+
+```bash
+docker compose up -d
+```
+
+### The machine is running out of CPU or memory
+
+Lower `WORKER_REPLICAS`, `MAX_CONCURRENT_TASKS`, or `TOOLBOX_MAX_CONCURRENT` in `.env`. The default container limits are in [docker-compose.yaml](docker-compose.yaml).
+
+### A tool needs a provider key or different setting
+
+Read [Toolbox configuration](config/toolbox/README.md). Keep provider keys outside Git and rebuild or restart the toolbox after changing its files.
+
+## More documents
+
+- [Architecture](docs/architecture.md): how the engine, database, tasks, and result links work.
+- [Operations](docs/operations.md): running, updating, backing up, and watching Reconator.
+- [Security](docs/security.md): scope checks, login rules, network safety, and tool safety.
+- [Module development](docs/module-development.md): adding a new recon module.
+- [Current coverage and roadmap](docs/coverage-and-roadmap.md): what is present and what is still planned.
+- [Research and capability map](docs/research-and-capability-map.md): why the current methods and tools were chosen.
+- [Performance](docs/performance.md): speed tests, limits, and tuning notes.
+- [Tool comparison](docs/competitive-analysis.md): differences between Reconator and other open tools.
+
+The old `modules/` folder is kept only as a reference. The current Docker images do not run those scripts.
 
 ## License
 
-GPL-3.0; see [LICENSE](LICENSE).
+Reconator is licensed under GPL-3.0. See [LICENSE](LICENSE).
