@@ -1,4 +1,4 @@
-# Reconator 3
+# Reconator
 
 Reconator helps you find and track the public parts of a web target during an approved security test. It can find names, addresses, web pages, ports, services, JavaScript files, API paths, and links between them.
 
