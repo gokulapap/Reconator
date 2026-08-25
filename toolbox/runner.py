@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
 import ctypes
 import hashlib
 import hmac
@@ -108,9 +109,7 @@ def _ip(value: Any, *, allow_private: bool) -> str:
     except ValueError as exc:
         raise RequestError("input must be an IP address") from exc
     if not allow_private and not address.is_global:
-        raise RequestError(
-            "non-public IP targets require explicit private-network authorization"
-        )
+        raise RequestError("non-public IP targets require explicit private-network authorization")
     return address.compressed
 
 
@@ -136,9 +135,7 @@ def _url(value: Any, *, require_url: bool = True) -> str:
 def _url_prefix_regex(value: Any) -> tuple[str, str]:
     validated = _url(value)
     parsed = urlsplit(validated)
-    prefix = urlunsplit(
-        (parsed.scheme.lower(), parsed.netloc.lower(), parsed.path or "/", "", "")
-    )
+    prefix = urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path or "/", "", ""))
     expression = f"^{re.escape(prefix.rstrip('/'))}(/.*)?([?#].*)?$"
     return prefix, expression
 
@@ -156,9 +153,7 @@ def _bounded_int(
     return min(max(value, minimum), maximum)
 
 
-def _choice_int(
-    config: dict[str, Any], name: str, default: int, choices: frozenset[int]
-) -> int:
+def _choice_int(config: dict[str, Any], name: str, default: int, choices: frozenset[int]) -> int:
     raw = config.get(name, default)
     if isinstance(raw, bool):
         raise RequestError(f"{name} must be an integer")
@@ -186,10 +181,8 @@ def _minimal_environment() -> dict[str, str]:
 def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
     if process.poll() is not None:
         return
-    try:
+    with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
     process.wait()
 
 
@@ -259,9 +252,7 @@ def _provider_config(argv: list[str], tool: str, flag: str) -> None:
         argv.extend([flag, str(candidate)])
 
 
-def build_command(
-    request: dict[str, Any], *, workdir: str
-) -> tuple[str, list[str], int]:
+def build_command(request: dict[str, Any], *, workdir: str) -> tuple[str, list[str], int]:
     tool = request.get("tool")
     config = request.get("config") or {}
     if not isinstance(tool, str) or tool not in TOOL_VERSIONS:
@@ -384,9 +375,7 @@ def build_command(
             "-crawl-duration",
             f"{_bounded_int(config, 'crawl_duration_seconds', 90, 10, 240)}s",
             "-max-response-size",
-            str(
-                _bounded_int(config, "max_response_bytes", 1_000_000, 1_024, 2_000_000)
-            ),
+            str(_bounded_int(config, "max_response_bytes", 1_000_000, 1_024, 2_000_000)),
             "-max-domain-pages",
             str(_bounded_int(config, "max_domain_pages", 500, 10, 2_000)),
             "-js-crawl",
@@ -499,16 +488,12 @@ class ToolboxServer(ThreadingHTTPServer):
 
     def __init__(self, address: tuple[str, int]) -> None:
         super().__init__(address, ToolboxHandler)
-        concurrency = max(
-            1, min(int(os.environ.get("TOOLBOX_MAX_CONCURRENT", "4")), 32)
-        )
+        concurrency = max(1, min(int(os.environ.get("TOOLBOX_MAX_CONCURRENT", "4")), 32))
         self.capacity = BoundedSemaphore(concurrency)
         self.connection_capacity = BoundedSemaphore(concurrency + 8)
         self.shared_secret = _consume_shared_secret()
         if len(self.shared_secret) < 24:
-            raise RuntimeError(
-                "TOOLBOX_SHARED_SECRET must contain at least 24 characters"
-            )
+            raise RuntimeError("TOOLBOX_SHARED_SECRET must contain at least 24 characters")
         self.verified_tools, self.implementation_digest = _verify_tool_installation()
 
     def process_request(self, request: Any, client_address: Any) -> None:
@@ -592,9 +577,7 @@ class ToolboxHandler(BaseHTTPRequestHandler):
         except ValueError:
             length = 0
         if not 0 < length <= MAX_REQUEST_BYTES:
-            self._send_json(
-                HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "invalid_size"}
-            )
+            self._send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "invalid_size"})
             return
         try:
             request = json.loads(self.rfile.read(length))
@@ -605,9 +588,7 @@ class ToolboxHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_request"})
             return
         if not self.server.capacity.acquire(timeout=30):
-            self._send_json(
-                HTTPStatus.TOO_MANY_REQUESTS, {"error": "capacity_exhausted"}
-            )
+            self._send_json(HTTPStatus.TOO_MANY_REQUESTS, {"error": "capacity_exhausted"})
             return
         try:
             with tempfile.TemporaryDirectory(prefix="reconator-tool-") as workdir:
@@ -648,7 +629,7 @@ class ToolboxHandler(BaseHTTPRequestHandler):
                 )
         except RequestError as exc:
             self._send_json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(exc)})
-        except Exception as exc:  # noqa: BLE001 - keep one malformed job from killing the runner
+        except Exception as exc:
             self._send_json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
                 {"error": "internal_error", "detail": type(exc).__name__},
